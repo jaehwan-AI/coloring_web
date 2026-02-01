@@ -1,0 +1,47 @@
+# ---------- (1) Frontend build stage ----------
+FROM node:20-alpine AS frontend-build
+WORKDIR /app/frontend
+
+# Install deps
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci || npm install
+RUN npm i -D @vitejs/plugin-react
+
+# Build
+COPY frontend/ ./
+RUN npm run build
+
+
+# ---------- (2) Backend runtime stage ----------
+FROM python:3.11-slim AS backend
+WORKDIR /app/backend
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# System deps (optional but nice)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Python deps
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Backend code
+COPY backend/ ./
+
+# Copy built frontend into frontend/dist so main.py can serve it
+# (main.py가 ../frontend/dist 경로를 찾는 방식이므로 경로를 맞춰줌)
+WORKDIR /app
+RUN mkdir -p /app/frontend/dist
+COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
+
+# Ensure uploads dir exists (also mounted by compose)
+RUN mkdir -p /app/backend/uploads
+
+EXPOSE 8000
+
+# Run FastAPI
+WORKDIR /app/backend
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

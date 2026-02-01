@@ -1,0 +1,138 @@
+:root{
+  /* z-index tokens */
+  --z-base: 0;
+  --z-content: 1;
+  --z-header: 100;
+  --z-drawer: 300;
+  --z-modal: 1000;
+  --z-toast: 1200;
+
+  /* will be set by JS (visualViewport) */
+  --vvh: 100dvh;         /* visual viewport height */
+  --header-h: 56px;      /* measured header height */
+}
+
+/* page base */
+html, body, #root { height: 100%; }
+body{
+  margin:0;
+  background:#f6f6f6;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* AppShell root takes real usable height */
+.appShell{
+  height: var(--vvh);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden; /* prevents body scroll fighting */
+  position:relative;
+  z-index: var(--z-base);
+}
+
+/* Fixed header: the only fixed element (besides modal) */
+.appHeader{
+  position: sticky; /* ✅ sticky is safer than fixed in many mobile cases */
+  top:0;
+  z-index: var(--z-header);
+  background:#fff;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+  padding-top: env(safe-area-inset-top);
+}
+
+/* header inner area */
+.appHeaderInner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding: 10px 12px;
+
+  /* ✅ toolbar와의 간격 확보 */
+  /* margin-bottom: 8px; */
+}
+
+.appTitle {
+  font-weight: 900;
+}
+
+.toolBar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  /* ✅ 정렬 */
+  justify-content: flex-end;
+  
+  /* ✅ 위/아래 여백 */
+  padding: 8px 12px 10px;
+  
+  /* 구분선 + 시각적 안정감 */
+  /* border-top: 1px solid rgba(0,0,0,0.06); */
+}
+
+/* nav buttons */
+.navGroup{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.btn{
+  border:1px solid rgba(0,0,0,0.14);
+  background:#fff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+  cursor:pointer;
+  user-select:none;
+}
+.btn[aria-pressed="true"]{
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.08) inset;
+}
+
+/* main content scroll area */
+.appMain{
+  position:relative;
+  z-index: var(--z-content);
+  flex:1;
+  overflow:auto; /* ✅ content scroll here */
+  -webkit-overflow-scrolling: touch;
+
+  /* safe-area bottom for iPhone home bar */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* page container */
+.page{
+  padding: 12px;
+}
+
+/* -------- Modal layer (optional) -------- */
+.modalOverlay{
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: rgba(0,0,0,0.45);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding: 16px;
+  /* ensure it catches taps */
+  pointer-events: auto;
+}
+
+.modalCard{
+  width: min(980px, 96vw);
+  max-height: calc(var(--vvh) - 24px);
+  background:#fff;
+  border-radius: 18px;
+  overflow:hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+
+/* -------- Safety: prevent hidden overlay from blocking clicks -------- */
+/* Only use overlays with pointer-events enabled if visible */
+.hiddenOverlay{
+  pointer-events:none !important;
+}

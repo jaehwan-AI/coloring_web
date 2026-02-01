@@ -1,0 +1,15 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coloring-service
+    ports:
+      - "8000:8000"
+    environment:
+      # 필요 시 CORS를 배포환경에 맞게 바꾸고 싶다면 main.py에서 ENV로 처리 가능
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # 업로드 파일 영구 보존
+      - ./backend/uploads:/app/backend/uploads
+    restart: unless-stopped
