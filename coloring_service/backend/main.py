@@ -1,21 +1,28 @@
 from __future__ import annotations
 
-import os
+import base64
 import uuid
+from datetime import datetime, date
 from pathlib import Path
+from typing import Optional, List
+from sqlmodel import select
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Response, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel
+from sqlmodel import Session, select
+
+from db import init_db, get_session
+from models import Member, ColoredResult
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Coloring Service")
+app = FastAPI(title="Member Management (PostgreSQL)")
 
-# 개발 중 프론트 dev 서버(vite)에서 호출할 경우 CORS 허용
+# 개발 중 프론트 dev 서버(vite)에서 호출할 경우
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -24,8 +31,241 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 업로드 파일 정적 서빙
+# 업로드 파일 정적 서빙 (실서비스 권한 필요하면 API로 서빙 권장)
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
+# ✅ DB 테이블 생성 (개발용)
+init_db()
+
+
+# ---------------------------
+# Schemas
+# ---------------------------
+class MemberUpsertIn(BaseModel):
+    number: str
+    name: str
+    memo: Optional[str] = None
+
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+
+class MemberOut(BaseModel):
+    id: int
+    number: str
+    name: str
+    memo: Optional[str] = None
+
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+
+    created_at: datetime
+    updated_at: datetime
+
+class SaveColoredIn(BaseModel):
+    member: MemberUpsertIn
+    image_data_url: str  # data:image/png;base64,...
+    original_id: Optional[int] = None
+    selected_date: Optional[date] = None
+
+class SaveColoredOut(BaseModel):
+    id: int
+    member_id: int
+    url: str
+    created_at: datetime
+
+class ResultItemOut(BaseModel):
+    id: int
+    created_at: datetime
+    url: str
+    thumb_url: Optional[str] = None
+    member: MemberOut
+
+class ResultsListOut(BaseModel):
+    items: list[ResultItemOut]
+    nextCursor: Optional[str] = None
+
+class MemberResultsItem(BaseModel):
+    id: int
+    selected_date: Optional[date] = None
+    created_at: datetime
+    url: str
+
+class MemberResultsOut(BaseModel):
+    member: MemberOut
+    items: List[MemberResultsItem]
+
+# ---------------------------
+# Member API
+# ---------------------------
+@app.post("/api/members/upsert", response_model=MemberOut)
+def upsert_member(payload: MemberUpsertIn, session: Session = Depends(get_session)):
+    m = session.exec(select(Member).where(Member.number == payload.number)).first()
+
+    if m:
+        m.name = payload.name
+        m.memo = payload.memo
+        m.height_cm = payload.height_cm
+        m.weight_kg = payload.weight_kg
+        m.updated_at = datetime.utcnow()
+        session.add(m)
+        session.commit()
+        session.refresh(m)
+        return m
+
+    m = Member(
+        number=payload.number, 
+        name=payload.name, 
+        memo=payload.memo,
+        height_cm=payload.height_cm,
+        weight_kg=payload.weight_kg
+        )
+    session.add(m)
+    session.commit()
+    session.refresh(m)
+    return m
+
+@app.get("/api/members/{number}")
+def get_member(number: str, session: Session = Depends(get_session)):
+    m = session.exec(select(Member).where(Member.number == number)).first()
+    if not m:
+        return Response(status_code=404)
+    return {
+        "id": m.id,
+        "number": m.number,
+        "name": m.name,
+        "memo": m.memo,
+        "created_at": m.created_at,
+        "updated_at": m.updated_at,
+    }
+
+# ---------------------------
+# Save colored image (with member link)
+# ---------------------------
+@app.post("/api/results/save", response_model=SaveColoredOut)
+def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)):
+    # 1) member upsert by number
+    m = session.exec(select(Member).where(Member.number == payload.member.number)).first()
+    if m:
+        m.name = payload.member.name
+        m.memo = payload.member.memo
+        m.updated_at = datetime.utcnow()
+        session.add(m)
+        session.commit()
+        session.refresh(m)
+    else:
+        m = Member(number=payload.member.number, name=payload.member.name, memo=payload.member.memo)
+        session.add(m)
+        session.commit()
+        session.refresh(m)
+
+    # 2) decode data URL
+    data_url = payload.image_data_url
+    if not data_url.startswith("data:image"):
+        return Response("Invalid image_data_url", status_code=400)
+
+    header, encoded = data_url.split(",", 1)
+    binary = base64.b64decode(encoded)
+
+    mime = "image/png"
+    if ";base64" in header and ":" in header:
+        mime = header.split(":")[1].split(";")[0]
+
+    # 3) save file: uploads/members/<member_id>/colored_<uuid>.png
+    member_dir = UPLOAD_DIR / "members" / str(m.id)
+    member_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"colored_{uuid.uuid4().hex}.png"
+    path = member_dir / filename
+    path.write_bytes(binary)
+
+    rel = path.relative_to(UPLOAD_DIR).as_posix()
+
+    # 4) save db row
+    r = ColoredResult(
+        member_id=m.id,
+        filename=rel,
+        mime=mime,
+        original_id=payload.original_id,
+        selected_date=payload.selected_date,
+    )
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+
+    return SaveColoredOut(
+        id=r.id,
+        member_id=m.id,
+        url=f"/uploads/{r.filename}",
+        created_at=r.created_at,
+    )
+
+
+# ---------------------------
+# List results (My Gallery / Member page)
+# cursor = last id
+# ---------------------------
+@app.get("/api/results", response_model=ResultsListOut)
+def list_results(
+    limit: int = 24,
+    cursor: Optional[int] = None,
+    session: Session = Depends(get_session),
+):
+    stmt = select(ColoredResult).order_by(ColoredResult.id.desc()).limit(limit + 1)
+    if cursor is not None:
+        stmt = stmt.where(ColoredResult.id < cursor)
+
+    rows = session.exec(stmt).all()
+
+    next_cursor = None
+    if len(rows) > limit:
+        next_cursor = rows[limit - 1].id
+        rows = rows[:limit]
+
+    items: list[ResultItemOut] = []
+    for r in rows:
+        m = session.get(Member, r.member_id)
+        if not m:
+            continue
+        items.append(
+            ResultItemOut(
+                id=r.id,
+                created_at=r.created_at,
+                url=f"/uploads/{r.filename}",
+                thumb_url=None,
+                member=MemberOut(
+                    id=m.id,
+                    number=m.number,
+                    name=m.name,
+                    memo=m.memo,
+                    created_at=m.created_at,
+                    updated_at=m.updated_at,
+                ),
+            )
+        )
+
+    return ResultsListOut(items=items, nextCursor=str(next_cursor) if next_cursor else None)
+
+
+# ---------------------------
+# Delete result (DB + file)
+# ---------------------------
+@app.delete("/api/images/{result_id}")
+def delete_result(result_id: int, session: Session = Depends(get_session)):
+    r = session.get(ColoredResult, result_id)
+    if not r:
+        return Response(status_code=404)
+
+    # delete file
+    file_path = UPLOAD_DIR / r.filename
+    try:
+        if file_path.exists():
+            file_path.unlink()
+    except:
+        pass
+
+    session.delete(r)
+    session.commit()
+    return Response(status_code=204)
 
 
 @app.post("/api/upload")
@@ -46,6 +286,51 @@ async def upload_image(file: UploadFile = File(...)):
     path.write_bytes(data)
 
     return {"url": f"/uploads/{filename}"}
+
+
+@app.get("/api/members/{number}/results", response_model=MemberResultsOut)
+def get_member_results(
+    number: str,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    session: Session = Depends(get_session),
+):
+    m = session.exec(select(Member).where(Member.number == number)).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    stmt = select(ColoredResult).where(ColoredResult.member_id == m.id)
+
+    if date_from is not None:
+        stmt = stmt.where(ColoredResult.selected_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(ColoredResult.selected_date <= date_to)
+
+    stmt = stmt.order_by(ColoredResult.selected_date.desc().nullslast(), ColoredResult.id.desc())
+
+    rows = session.exec(stmt).all()
+
+    return MemberResultsOut(
+        member=MemberOut(
+            id=m.id,
+            number=m.number,
+            name=m.name,
+            memo=m.memo,
+            height_cm=m.height_cm,
+            weight_kg=m.weight_kg,
+            created_at=m.created_at,
+            updated_at=m.updated_at,
+        ),
+        items=[
+            MemberResultsItem(
+                id=r.id,
+                selected_date=r.selected_date,
+                created_at=r.created_at,
+                url=f"/uploads/{r.filename}",
+            )
+            for r in rows
+        ],
+    )
 
 
 # (선택) 배포 시 frontend 빌드 결과를 백엔드가 서빙하도록 할 때

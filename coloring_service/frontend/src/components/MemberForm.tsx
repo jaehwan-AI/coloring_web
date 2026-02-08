@@ -4,6 +4,8 @@ type MemberInfo = {
   number: number;
   name: string;
   memo?: string;
+  height_cm?: number;
+  weight_kg?: number;
 };
 
 type Props = {

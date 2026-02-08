@@ -1,6 +1,28 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-type GalleryItem = {
+
+type Member = {
+  id: number;
+  number: string;
+  name: string;
+  height_cm?: number | null;
+  weight_kg?: number | null;
+  memo?: string | null;
+}
+
+type ResultItem = {
+  id: number;
+  selected_date?: string | null; // "YYYY-MM-DD"
+  created_at: string;
+  url: string; // "/uploads/...png"
+};
+
+type ApiResponse = {
+  member: Member;
+  items: ResultItem[];
+}
+
+type MemberItem = {
   id: string;
   createdAt: string;          // ISO string
   originalId?: string | null;
@@ -11,7 +33,7 @@ type GalleryItem = {
 };
 
 type ResultsResponse = {
-  items: GalleryItem[];
+  items: MemberItem[];
   nextCursor: string | null;
 };
 
@@ -54,12 +76,70 @@ function formatDate(iso: string) {
   }
 }
 
-export default function MyGallery() {
-  const [items, setItems] = useState<GalleryItem[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+function groupByDate(items: ResultItem[]) {
+  const map = new Map<string, ResultItem[]>();
+  for (const it of items) {
+    const key = it.selected_date ?? "No Date";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(it);
+  }
+  // 날짜 내림차순 정렬 ("No Date"는 마지막)
+  const keys = Array.from(map.keys()).sort((a, b) => {
+    if (a === "No Date") return 1;
+    if (b === "No Date") return -1;
+    return b.localeCompare(a);
+  });
+  return keys.map((k) => ({ date: k, items: map.get(k)! }));
+}
+
+export default function MyMember() {
+  const [number, setNumber] = useState("");
+  const [data, setData] = useState<ApiResponse | null>(null);
+  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [items, setItems] = useState<MemberItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 날짜 필터
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  async function load() {
+    const n = number.trim();
+    if (!n) {
+      setMsg("Member number를 입력하세요.");
+      return;
+    }
+    setLoading(true);
+    setMsg("");
+
+    try {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+
+      const qs = params.toString();
+      const res = await fetch(`/api/members/${encodeURIComponent(n)}/results${qs ? `?${qs}` : ""}`);
+
+      if (!res.ok) {
+        setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
+        setData(null);
+        return;
+      }
+      const json = (await res.json()) as ApiResponse;
+      setData(json);
+    } catch {
+      setMsg("네트워크 오류");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const grouped = useMemo(() => (data ? groupByDate(data.items) : []), [data]);
 
   // UI state
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -78,7 +158,7 @@ export default function MyGallery() {
       setItems(data.items || []);
       setNextCursor(data.nextCursor ?? null);
     } catch (e: any) {
-      setError(e?.message || "Failed to load gallery.");
+      setError(e?.message || "Failed to load member.");
     } finally {
       setLoading(false);
     }
@@ -120,7 +200,7 @@ export default function MyGallery() {
     }
   }
 
-  async function downloadItem(item: GalleryItem) {
+  async function downloadItem(item: MemberItem) {
     const url = item.downloadUrl || (item.url ?? `/api/images/${encodeURIComponent(item.id)}`);
     const safeName =
       item.filename ||
@@ -139,120 +219,88 @@ export default function MyGallery() {
   }, []);
 
   return (
-    <div style={{ padding: 16 }}>
-      <div style={styles.headerRow}>
-        <h2 style={{ margin: 0 }}>My Gallery</h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button style={styles.btn} onClick={loadFirstPage} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 12 }}>
+      <h2 style={{ marginTop: 0 }}>My Member</h2>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          Number
+          <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="예: 100023" />
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          From
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          To
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        </label>
+
+        <button className="btn" onClick={load} disabled={loading}>
+          {loading ? "Loading..." : "Load"}
+        </button>
       </div>
 
-      {error && (
-        <div style={styles.errorBox}>
-          {error}
-        </div>
-      )}
+      {msg && <div style={{ marginTop: 10, color: "#666" }}>{msg}</div>}
 
-      {loading ? (
-        <div style={{ padding: 16, color: "#666" }}>Loading...</div>
-      ) : items.length === 0 ? (
-        <div style={{ padding: 16, color: "#666" }}>
-          No results yet. Save a colored image to see it here.
-        </div>
-      ) : (
-        <>
-          <div style={styles.grid}>
-            {items.map((it) => (
-              <div
-                key={it.id}
-                style={{
-                  ...styles.card,
-                  outline: selectedId === it.id ? "3px solid rgba(0,0,0,0.12)" : "none"
-                }}
-              >
-                <button
-                  style={styles.thumbBtn}
-                  onClick={() => setSelectedId(it.id)}
-                  title="Open"
-                >
-                  <img
-                    src={it.thumbUrl}
-                    alt={`thumb-${it.id}`}
-                    style={styles.thumbImg}
-                    loading="lazy"
-                  />
-                </button>
+      {data && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: 12, boxShadow: "0 8px 20px rgba(0,0,0,0.06)" }}>
+            <div><b>{data.member.name}</b> (#{data.member.number})</div>
+            <div style={{ color: "#666", marginTop: 6 }}>
+              Height: {data.member.height_cm ?? "-"} cm / Weight: {data.member.weight_kg ?? "-"} kg
+            </div>
+            {data.member.memo ? <div style={{ marginTop: 6 }}>{data.member.memo}</div> : null}
+          </div>
 
-                <div style={styles.meta}>
-                  <div style={styles.metaTop}>
-                    <span style={styles.dateText}>{formatDate(it.createdAt)}</span>
-                  </div>
-                  <div style={styles.actions}>
-                    <button style={styles.btnSmall} onClick={() => downloadItem(it)}>
-                      Download
-                    </button>
-                    <button
-                      style={{ ...styles.btnSmall, ...styles.btnDanger }}
-                      onClick={() => {
-                        if (confirm("Delete this image?")) deleteItem(it.id);
-                      }}
-                    >
-                      Delete
-                    </button>
+          <div style={{ marginTop: 14 }}>
+            {grouped.length === 0 ? (
+              <div style={{ color: "#666" }}>저장된 색칠 결과가 없습니다.</div>
+            ) : (
+              grouped.map((g) => (
+                <div key={g.date} style={{ marginBottom: 18 }}>
+                  <h3 style={{ margin: "10px 0" }}>{g.date}</h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                      gap: 10,
+                    }}
+                  >
+                    {g.items.map((it) => (
+                      <a
+                        key={it.id}
+                        href={it.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: "block",
+                          background: "#fff",
+                          borderRadius: 12,
+                          overflow: "hidden",
+                          boxShadow: "0 6px 14px rgba(0,0,0,0.08)",
+                          textDecoration: "none",
+                          color: "inherit",
+                        }}
+                        title={`Result #${it.id}`}
+                      >
+                        <img
+                          src={it.url}
+                          alt={`result-${it.id}`}
+                          style={{ width: "100%", height: 140, objectFit: "cover", display: "block" }}
+                          loading="lazy"
+                        />
+                        <div style={{ padding: 8, fontSize: 12, color: "#666" }}>
+                          #{it.id}
+                        </div>
+                      </a>
+                    ))}
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "center", padding: 16 }}>
-            {nextCursor ? (
-              <button style={styles.btn} onClick={loadMore} disabled={loadingMore}>
-                {loadingMore ? "Loading..." : "Load more"}
-              </button>
-            ) : (
-              <span style={{ color: "#777" }}>No more results</span>
+              ))
             )}
-          </div>
-        </>
-      )}
-
-      {/* Simple modal preview */}
-      {selected && (
-        <div style={styles.modalOverlay} onClick={() => setSelectedId(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <strong>Preview</strong>
-                <span style={{ fontSize: 12, color: "#666" }}>{formatDate(selected.createdAt)}</span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={styles.btnSmall} onClick={() => downloadItem(selected)}>
-                  Download
-                </button>
-                <button
-                  style={{ ...styles.btnSmall, ...styles.btnDanger }}
-                  onClick={() => {
-                    if (confirm("Delete this image?")) deleteItem(selected.id);
-                  }}
-                >
-                  Delete
-                </button>
-                <button style={styles.btnSmall} onClick={() => setSelectedId(null)}>
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div style={{ padding: 12 }}>
-              <img
-                src={selected.url || selected.thumbUrl || `/api/images/${encodeURIComponent(selected.id)}`}
-                alt={`full-${selected.id}`}
-                style={styles.previewImg}
-              />
-            </div>
           </div>
         </div>
       )}

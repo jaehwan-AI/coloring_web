@@ -2,9 +2,9 @@ import React from "react";
 import "./appShell.css";
 import { useViewportVars } from "./useViewportVars";
 
-type Page = "color" | "gallery";
+type Page = "color" | "member";
 
-export type PageType = "color" | "gallery";
+export type PageType = "color" | "member";
 
 type Props = {
   page: PageType;
@@ -29,14 +29,14 @@ export default function AppShell({
     <div className="appShell">
       <header className="appHeader">
         <div className="appHeaderInner">
-          <div style={{ fontWeight: 900 }}>Coloring Service</div>
+          <div style={{ fontWeight: 900 }}>Member Management</div>
 
           <nav className="navGroup">
             <button className="btn" aria-pressed={page === "color"} onClick={() => setPage("color")}>
               Color
             </button>
-            <button className="btn" aria-pressed={page === "gallery"} onClick={() => setPage("gallery")}>
-              My Gallery
+            <button className="btn" aria-pressed={page === "member"} onClick={() => setPage("member")}>
+              My Member
             </button>
           </nav>
         </div>

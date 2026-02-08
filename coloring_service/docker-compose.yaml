@@ -1,15 +1,30 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: coloring-postgres
+    environment:
+      POSTGRES_USER: coloring
+      POSTGRES_PASSWORD: coloring
+      POSTGRES_DB: coloring_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: coloring-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://coloring:coloring@db:5432/coloring_db
     ports:
       - "8000:8000"
-    environment:
-      # 필요 시 CORS를 배포환경에 맞게 바꾸고 싶다면 main.py에서 ENV로 처리 가능
-      - PYTHONUNBUFFERED=1
     volumes:
-      # 업로드 파일 영구 보존
       - ./backend/uploads:/app/backend/uploads
+    depends_on:
+      - db
     restart: unless-stopped
+
+volumes:
+  pgdata:
