@@ -12,8 +12,8 @@ type MemberInfo = {
   number: string;
   name: string;
   memo?: string;
-  height_cm?: number;
-  weight_kg?: number;
+  height_cm?: number | null;
+  weight_kg?: number | null;
 };
 
 function drawImageContainShiftUp(
@@ -80,6 +80,8 @@ export default function App() {
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   });
+
+  const [resultNote, setResultNote] = useState("");
 
   const hasImage = !!imgUrl;
 
@@ -191,6 +193,7 @@ export default function App() {
         image_data_url,
         selected_date: selectedDate, // ✅ 함께 저장
         original_id: null,
+        note: resultNote,
       }),
     });
 
@@ -199,7 +202,8 @@ export default function App() {
       alert(t || "Failed to save colored result.");
       return;
     }
-
+    
+    setResultNote("");  // 메모 초기화
     alert("Saved colored result!");
   }
 
@@ -421,7 +425,7 @@ export default function App() {
         <MyMember />
       ) : (
         <>
-          <div className="colorLayout">
+          <div className="colorLayout3">
             {/* Left panel: member input/load/save */}
             <section className="memberPanel">
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Member</h3>
@@ -519,6 +523,16 @@ export default function App() {
                 }}
               />
             </section>
+
+            <section className="notePanel">
+              <h3 style={{ marginTop: 0, marginBottom: 10 }}>Note</h3>
+              <textarea
+                value={resultNote}
+                onChange={(e) => setResultNote(e.target.value)}
+                placeholder="Write any note about this coloring..."
+                className="noteTextarea"
+              />
+            </section>
           </div>
 
           {/* <div className="hint" style={{ marginTop: 10 }}>
@@ -527,14 +541,31 @@ export default function App() {
 
           {/* Layout CSS. If you already have these in a global CSS file, move them there. */}
           <style>{`
-            .colorLayout {
+            .colorLayout3 {
               display: grid;
-              grid-template-columns: 340px 1fr;
+              grid-template-columns: 340px 1fr 320px;
               gap: 12px;
               align-items: start;
             }
+            @media (max-width: 1100px) {
+              .colorLayout3 {
+                grid-template-columns: 340px 1fr;
+                grid-template-areas:
+                  "member canvas"
+                  "note note";
+              }
+              .memberPanel { grid-area: member; }
+              .canvasWrap { grid-area: canvas; }
+              .notePanel { grid-area: note; }
+            }
             @media (max-width: 900px) {
-              .colorLayout { grid-template-columns: 1fr; }
+              .colorLayout3 {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                  "member"
+                  "canvas"
+                  "note";
+              }
             }
             .memberPanel {
               background: #fff;
@@ -586,6 +617,11 @@ export default function App() {
               background: #fff;
               border-radius: 10px;
               touch-action: none; /* allow pointer drawing without scrolling */
+            }
+            .noteTextarea{
+              width: 100%;
+              min-height: 320px;
+              resize: vertical;
             }
           `}</style>
         </>

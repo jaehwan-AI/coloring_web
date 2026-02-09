@@ -15,6 +15,7 @@ type ResultItem = {
   selected_date?: string | null; // "YYYY-MM-DD"
   created_at: string;
   url: string; // "/uploads/...png"
+  note?: string | null;
 };
 
 type ApiResponse = {
@@ -103,10 +104,6 @@ export default function MyMember() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 날짜 필터
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-
   async function load() {
     const n = number.trim();
     if (!n) {
@@ -117,12 +114,7 @@ export default function MyMember() {
     setMsg("");
 
     try {
-      const params = new URLSearchParams();
-      if (dateFrom) params.set("date_from", dateFrom);
-      if (dateTo) params.set("date_to", dateTo);
-
-      const qs = params.toString();
-      const res = await fetch(`/api/members/${encodeURIComponent(n)}/results${qs ? `?${qs}` : ""}`);
+      const res = await fetch(`/api/members/${encodeURIComponent(n)}/results`);
 
       if (!res.ok) {
         setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
@@ -140,6 +132,10 @@ export default function MyMember() {
   }
 
   const grouped = useMemo(() => (data ? groupByDate(data.items) : []), [data]);
+
+  // Modal (member results)
+  const [selectedResult, setSelectedResult] = useState<ResultItem | null>(null);
+
 
   // UI state
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -228,16 +224,6 @@ export default function MyMember() {
           <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="예: 100023" />
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          From
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          To
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-        </label>
-
         <button className="btn" onClick={load} disabled={loading}>
           {loading ? "Loading..." : "Load"}
         </button>
@@ -270,19 +256,19 @@ export default function MyMember() {
                     }}
                   >
                     {g.items.map((it) => (
-                      <a
+                      <button
                         key={it.id}
-                        href={it.url}
-                        target="_blank"
-                        rel="noreferrer"
+                        type="button"
+                        onClick={() => setSelectedResult(it)}
                         style={{
-                          display: "block",
+                          border: "none",
+                          padding: 0,
+                          textAlign: "left",
+                          cursor: "pointer",
                           background: "#fff",
                           borderRadius: 12,
                           overflow: "hidden",
                           boxShadow: "0 6px 14px rgba(0,0,0,0.08)",
-                          textDecoration: "none",
-                          color: "inherit",
                         }}
                         title={`Result #${it.id}`}
                       >
@@ -295,7 +281,7 @@ export default function MyMember() {
                         <div style={{ padding: 8, fontSize: 12, color: "#666" }}>
                           #{it.id}
                         </div>
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -304,6 +290,71 @@ export default function MyMember() {
           </div>
         </div>
       )}
+
+      {/* Result detail modal (image + note) */}
+      {selectedResult && (
+        <div style={styles.modalOverlay} onClick={() => setSelectedResult(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <div style={{ fontWeight: 800 }}>
+                {selectedResult.selected_date ?? "No Date"} · Result #{selectedResult.id}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <a
+                  className="btn"
+                  href={selectedResult.url}
+                  download
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Download
+                </a>
+                <button className="btn" type="button" onClick={() => setSelectedResult(null)}>
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div
+              className="member-result-modal-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 360px",
+                gap: 0,
+              }}
+            >
+              <div style={{ padding: 12, background: "#fafafa" }}>
+                <img src={selectedResult.url} alt="selected" style={styles.previewImg} />
+              </div>
+
+              <div style={{ padding: 12 }}>
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>Note</div>
+                <div
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    border: "1px solid rgba(0,0,0,0.12)",
+                    borderRadius: 12,
+                    padding: 12,
+                    minHeight: 140,
+                    background: "#fff",
+                  }}
+                >
+                  {selectedResult.note?.trim() ? selectedResult.note : "No note saved."}
+                </div>
+              </div>
+            </div>
+
+            {/* Mobile/iPad: stack columns */}
+            <style>{`
+              @media (max-width: 900px) {
+                .member-result-modal-grid {
+                  grid-template-columns: 1fr !important;
+                }
+              }
+            `}</style>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

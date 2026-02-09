@@ -66,6 +66,7 @@ class SaveColoredIn(BaseModel):
     image_data_url: str  # data:image/png;base64,...
     original_id: Optional[int] = None
     selected_date: Optional[date] = None
+    note: Optional[str] = None
 
 class SaveColoredOut(BaseModel):
     id: int
@@ -89,6 +90,7 @@ class MemberResultsItem(BaseModel):
     selected_date: Optional[date] = None
     created_at: datetime
     url: str
+    note: Optional[str] = None
 
 class MemberResultsOut(BaseModel):
     member: MemberOut
@@ -134,6 +136,8 @@ def get_member(number: str, session: Session = Depends(get_session)):
         "number": m.number,
         "name": m.name,
         "memo": m.memo,
+        "height_cm": m.height_cm,
+        "weight_kg": m.weight_kg,
         "created_at": m.created_at,
         "updated_at": m.updated_at,
     }
@@ -187,6 +191,7 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
         mime=mime,
         original_id=payload.original_id,
         selected_date=payload.selected_date,
+        note=payload.note,
     )
     session.add(r)
     session.commit()
@@ -237,6 +242,8 @@ def list_results(
                     number=m.number,
                     name=m.name,
                     memo=m.memo,
+                    height_cm=m.height_cm,
+                    weight_kg=m.weight_kg,
                     created_at=m.created_at,
                     updated_at=m.updated_at,
                 ),
@@ -327,6 +334,7 @@ def get_member_results(
                 selected_date=r.selected_date,
                 created_at=r.created_at,
                 url=f"/uploads/{r.filename}",
+                note=r.note,
             )
             for r in rows
         ],

@@ -30,4 +30,6 @@ class ColoredResult(SQLModel, table=True):
 
     selected_date: Optional[date] = Field(default=None, index=True)
 
+    note: Optional[str] = Field(default=None)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
