@@ -5,6 +5,9 @@ import { COLORS,
   floodFillWithBgMask, type RGB } from "./coloring";
 import AppShell from "./layout/AppShell";
 import MyMember from "./pages/MyMember";
+import AdminLogin from "./pages/AdminLogin";
+import { clearAdminToken, getAdminToken } from "./auth/adminToken";
+
 
 type Color = "red" | "blue";
 
@@ -60,7 +63,8 @@ export default function App() {
 
   const bgMaskRef = useRef<Uint8Array | null>(null);
 
-  const [page, setPage] = useState<"color" | "member">("color");
+  const [page, setPage] = useState<"color" | "member" | "admin">("admin");
+  const [adminAuthed, setAdminAuthed] = useState(false);
 
   // ===== Member panel state =====
   const [member, setMember] = useState<MemberInfo>({ 
@@ -626,6 +630,7 @@ export default function App() {
           `}</style>
         </>
       )}
+      {page === "admin" && <AdminLogin />}
     </AppShell>
   );
 }

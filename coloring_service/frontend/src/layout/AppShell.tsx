@@ -4,7 +4,7 @@ import { useViewportVars } from "./useViewportVars";
 
 type Page = "color" | "member";
 
-export type PageType = "color" | "member";
+export type PageType = "color" | "member" | "admin";
 
 type Props = {
   page: PageType;
@@ -32,6 +32,9 @@ export default function AppShell({
           <div style={{ fontWeight: 900 }}>Member Management</div>
 
           <nav className="navGroup">
+            <button className="btn" aria-pressed={page === "admin"} onClick={() => setPage("admin")}>
+              Admin
+            </button>
             <button className="btn" aria-pressed={page === "color"} onClick={() => setPage("color")}>
               Color
             </button>

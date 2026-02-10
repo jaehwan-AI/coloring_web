@@ -17,6 +17,14 @@ services:
       dockerfile: Dockerfile
     container_name: coloring-service
     environment:
+      # JWT setting
+      JWT_SECRET: "change_this_to_a_long_random_string_123456789"
+
+      # admin account
+      ADMIN_USERNAME: "admin"
+      ADMIN_PASSWORD_HASH: "$2b$12$wZf4tyr7BRJNTT5CUTZR1.v/xOE0Yl2VOR7npN8sJO1eHZKdJ38rm"
+
+      # DB
       DATABASE_URL: postgresql+psycopg://coloring:coloring@db:5432/coloring_db
     ports:
       - "8000:8000"

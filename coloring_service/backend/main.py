@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 import base64
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional, List
 from sqlmodel import select
@@ -16,9 +17,24 @@ from sqlmodel import Session, select
 from db import init_db, get_session
 from models import Member, ColoredResult
 
+from fastapi.security import OAuth2PasswordBearer
+from jose import jwt, JWTError
+from passlib.hash import bcrypt
+from pydantic import BaseModel
+
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# admin setting
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
+JWT_ALG = "HS256"
+ACCESS_TOKEN_MINUTES = 60 * 12  # 12 hours
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH", "$2b$12$wZf4tyr7BRJNTT5CUTZR1.v/xOE0Yl2VOR7npN8sJO1eHZKdJ38rm")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/admin/login")
 
 app = FastAPI(title="Member Management (PostgreSQL)")
 
@@ -95,6 +111,28 @@ class MemberResultsItem(BaseModel):
 class MemberResultsOut(BaseModel):
     member: MemberOut
     items: List[MemberResultsItem]
+
+class AdminLoginIn(BaseModel):
+    username: str
+    password: str
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+def create_access_token(subject: str) -> str:
+    exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_MINUTES)
+    payload = {"sub": subject, "exp": exp, "role": "admin"}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+def require_admin(token: str = Depends(oauth2_scheme)) -> str:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+        if payload.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Not an admin")
+        return payload.get("sub", "")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # ---------------------------
 # Member API
@@ -339,6 +377,27 @@ def get_member_results(
             for r in rows
         ],
     )
+
+# ---------------------------
+# Admin login API
+# ---------------------------
+@app.post("/api/admin/login", response_model=TokenOut)
+def admin_login(body: AdminLoginIn):
+    if body.username != ADMIN_USERNAME:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not ADMIN_PASSWORD_HASH:
+        raise HTTPException(status_code=500, detail="Admin password not configured")
+
+    if not bcrypt.verify(body.password, ADMIN_PASSWORD_HASH):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_access_token(subject=body.username)
+    return TokenOut(access_token=token)
+
+
+@app.get("/api/admin/ping")
+def admin_ping(_admin: str = Depends(require_admin)):
+    return {"ok": True}
 
 
 # (선택) 배포 시 frontend 빌드 결과를 백엔드가 서빙하도록 할 때
