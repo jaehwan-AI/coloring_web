@@ -6,4 +6,5 @@ sqlmodel==0.0.22
 psycopg[binary]==3.2.1
 
 python-jose[cryptography]
-passlib[bcrypt]
+passlib
+bcrypt==4.3.0

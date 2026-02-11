@@ -94,7 +94,7 @@ function groupByDate(items: ResultItem[]) {
 }
 
 export default function MyMember() {
-  const [number, setNumber] = useState("");
+  const [name, setName] = useState("");
   const [data, setData] = useState<ApiResponse | null>(null);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
@@ -105,16 +105,16 @@ export default function MyMember() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const n = number.trim();
-    if (!n) {
-      setMsg("Member number를 입력하세요.");
+    const q = name.trim();
+    if (!q) {
+      setMsg("Member name을 입력하세요.");
       return;
     }
     setLoading(true);
     setMsg("");
 
     try {
-      const res = await fetch(`/api/members/${encodeURIComponent(n)}/results`);
+      const res = await fetch(`/api/members/by-name/${encodeURIComponent(q)}/results`);
 
       if (!res.ok) {
         setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
@@ -220,8 +220,8 @@ export default function MyMember() {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          Number
-          <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="예: 100023" />
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 김종학" />
         </label>
 
         <button className="btn" onClick={load} disabled={loading}>
@@ -256,19 +256,29 @@ export default function MyMember() {
                     }}
                   >
                     {g.items.map((it) => (
-                      <button
+                      <a
                         key={it.id}
-                        type="button"
+                        // type="button"
+                        href={it.url}
+                        target=" blank"
+                        rel="noreferrer"
                         onClick={() => setSelectedResult(it)}
                         style={{
-                          border: "none",
-                          padding: 0,
-                          textAlign: "left",
-                          cursor: "pointer",
+                          // border: "none",
+                          // padding: 0,
+                          // textAlign: "left",
+                          // cursor: "pointer",
+                          // background: "#fff",
+                          // borderRadius: 12,
+                          // overflow: "hidden",
+                          // boxShadow: "0 6px 14px rgba(0,0,0,0.08)",
+                          display: "black",
                           background: "#fff",
                           borderRadius: 12,
                           overflow: "hidden",
                           boxShadow: "0 6px 14px rgba(0,0,0,0.08)",
+                          textDecoration: "none",
+                          color: "inherit",
                         }}
                         title={`Result #${it.id}`}
                       >
@@ -281,7 +291,7 @@ export default function MyMember() {
                         <div style={{ padding: 8, fontSize: 12, color: "#666" }}>
                           #{it.id}
                         </div>
-                      </button>
+                      </a>
                     ))}
                   </div>
                 </div>

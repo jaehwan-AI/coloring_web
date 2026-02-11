@@ -81,6 +81,7 @@ class SaveColoredIn(BaseModel):
     member: MemberUpsertIn
     image_data_url: str  # data:image/png;base64,...
     original_id: Optional[int] = None
+    original_upload_url: Optional[str] = None
     selected_date: Optional[date] = None
     note: Optional[str] = None
 
@@ -164,9 +165,9 @@ def upsert_member(payload: MemberUpsertIn, session: Session = Depends(get_sessio
     session.refresh(m)
     return m
 
-@app.get("/api/members/{number}")
-def get_member(number: str, session: Session = Depends(get_session)):
-    m = session.exec(select(Member).where(Member.number == number)).first()
+@app.get("/api/members/{name}")
+def get_member(name: str, session: Session = Depends(get_session)):
+    m = session.exec(select(Member).where(Member.name == name)).first()
     if not m:
         return Response(status_code=404)
     return {
@@ -179,6 +180,47 @@ def get_member(number: str, session: Session = Depends(get_session)):
         "created_at": m.created_at,
         "updated_at": m.updated_at,
     }
+
+@app.get("/api/members/by-name/{name}/results")
+def get_member_results_by_name(name: str, session: Session = Depends(get_session)):
+    # 이름이 중복될 수 있으므로, 가장 최근(updated_at) 멤버를 우선 선택합니다.
+    stmt = (
+        select(Member)
+        .where(Member.name == name)
+        .order_by(Member.updated_at.desc(), Member.id.desc())
+    )
+    m = session.exec(stmt).first()
+    if not m:
+        return Response(status_code=404)
+
+    rows = session.exec(
+        select(ColoredResult)
+        .where(ColoredResult.member_id == m.id)
+        .order_by(ColoredResult.id.desc())
+    ).all()
+
+    return {
+        "member": {
+            "id": m.id,
+            "number": m.number,
+            "name": m.name,
+            "height_cm": getattr(m, "height_cm", None),
+            "weight_kg": getattr(m, "weight_kg", None),
+            "memo": m.memo,
+            "created_at": m.created_at,
+            "updated_at": m.updated_at,
+        },
+        "items": [
+            {
+                "id": r.id,
+                "selected_date": getattr(r, "selected_date", None),
+                "created_at": r.created_at,
+                "url": f"/uploads/{r.filename}",
+            }
+            for r in rows
+        ],
+    }
+
 
 # ---------------------------
 # Save colored image (with member link)
@@ -235,12 +277,46 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
     session.commit()
     session.refresh(r)
 
+    # 5) delete original uploaded file (optional)
+    if getattr(payload, "original_upload_url", None):
+        _safe_unlink_uploaded_url(payload.original_upload_url)
+
     return SaveColoredOut(
         id=r.id,
         member_id=m.id,
         url=f"/uploads/{r.filename}",
         created_at=r.created_at,
     )
+
+def _safe_unlink_uploaded_url(url: str) -> bool:
+    """Delete a file under UPLOAD_DIR given a public /uploads/... URL.
+
+    Safety:
+    - Only accepts URLs starting with /uploads/
+    - Never deletes files under /uploads/members/ (saved results)
+    """
+    try:
+        if not url or not isinstance(url, str):
+            return False
+        if not url.startswith("/uploads/"):
+            return False
+
+        rel = url[len("/uploads/"):]
+        # prevent deleting saved results
+        if rel.startswith("members/"):
+            return False
+
+        base = UPLOAD_DIR.resolve()
+        target = (UPLOAD_DIR / rel).resolve()
+
+        if base not in target.parents and target != base:
+            return False
+        if target.exists() and target.is_file():
+            target.unlink()
+            return True
+        return False
+    except Exception:
+        return False
 
 
 # ---------------------------
@@ -377,6 +453,7 @@ def get_member_results(
             for r in rows
         ],
     )
+
 
 # ---------------------------
 # Admin login API

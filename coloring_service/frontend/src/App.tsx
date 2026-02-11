@@ -66,6 +66,12 @@ export default function App() {
   const [page, setPage] = useState<"color" | "member" | "admin">("admin");
   const [adminAuthed, setAdminAuthed] = useState(false);
 
+  useEffect(() => {
+    clearAdminToken();
+    setAdminAuthed(false);
+    setPage("admin");
+  }, []);
+
   // ===== Member panel state =====
   const [member, setMember] = useState<MemberInfo>({ 
     number: "", 
@@ -102,25 +108,41 @@ export default function App() {
     setImgUrl(data.url);
   }
 
-  // ===== Member Load (number) =====
-  async function loadMemberByNumber() {
-    const number = member.number.trim();
-    if (!number) {
+  // ===== Member Load (name) =====
+  async function loadMemberByName() {
+    const name = member.name.trim();
+    if (!name) {
       setMemberMsg("Please enter member number.");
       return;
     }
     setLoadingMember(true);
     setMemberMsg("");
     try {
-      const res = await fetch(`/api/members/${encodeURIComponent(number)}`);
+      // 1) Try direct endpoint (if exists)
+      const res = await fetch(`/api/members/${encodeURIComponent(name)}`);
+      if (!res.ok) {
+        // 2) Fallback: search endpoint returning list (if exists)
+        alert("Member not found.");
+        return;
+      }
+
       if (!res.ok) {
         setMemberMsg(res.status === 404 ? "Member not found." : "Failed to load member.");
         return;
       }
+      
       const data = await res.json();
+
+      // If using search endpoint: { items: [...] }
+      const memberData = Array.isArray(data?.items) ? (data.items[0] ?? null) : data;
+      if (!memberData) {
+        setMemberMsg("Member not found.");
+        return;
+      }
+
       setMember({
-        number: data.number ?? number,
-        name: data.name ?? "",
+        number: data.number ?? "",
+        name: data.name ?? name,
         memo: data.memo ?? "",
         height_cm: data.height_cm ?? null,
         weight_kg: data.weight_kg ?? null,
@@ -198,6 +220,7 @@ export default function App() {
         selected_date: selectedDate, // ✅ 함께 저장
         original_id: null,
         note: resultNote,
+        original_upload_url: imgUrl,
       }),
     });
 
@@ -383,6 +406,17 @@ export default function App() {
 
   console.log("APP.TSX LOADED ✅", new Date().toISOString());
 
+  if (!adminAuthed) {
+    return (
+      <AdminLogin
+        onSuccess={() => {
+          setAdminAuthed(true);
+          setPage("color");  // 로그인 성공 후 이동
+        }}
+      />
+    );
+  }
+
   return (
     <AppShell
       page={page}
@@ -436,24 +470,24 @@ export default function App() {
 
               <div className="memberRow">
                 <label style={{ flex: 1, marginBottom: 0 }}>
-                  Number
+                  Name
                   <input
-                    value={member.number}
-                    onChange={(e) => setMember({ ...member, number: e.target.value })}
-                    placeholder="e.g. 100023"
+                    value={member.name}
+                    onChange={(e) => setMember({ ...member, name: e.target.value })}
+                    placeholder="e.g. 김종학"
                   />
                 </label>
-                <button className="btn" onClick={loadMemberByNumber} disabled={loadingMember}>
+                <button className="btn" onClick={loadMemberByName} disabled={loadingMember}>
                   {loadingMember ? "Loading..." : "Load"}
                 </button>
               </div>
 
               <label>
-                Name
+                Number
                 <input
-                  value={member.name}
+                  value={member.number}
                   onChange={(e) => setMember({ ...member, name: e.target.value })}
-                  placeholder="e.g. JaeHwan"
+                  placeholder="e.g. 100023"
                 />
               </label>
 
