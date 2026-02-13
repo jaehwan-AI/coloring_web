@@ -216,6 +216,7 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
                 "selected_date": getattr(r, "selected_date", None),
                 "created_at": r.created_at,
                 "url": f"/uploads/{r.filename}",
+                "note": r.note,
             }
             for r in rows
         ],
@@ -320,7 +321,7 @@ def _safe_unlink_uploaded_url(url: str) -> bool:
 
 
 # ---------------------------
-# List results (My Gallery / Member page)
+# List results (My Member page)
 # cursor = last id
 # ---------------------------
 @app.get("/api/results", response_model=ResultsListOut)

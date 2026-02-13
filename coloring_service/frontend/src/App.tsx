@@ -486,7 +486,7 @@ export default function App() {
                 Number
                 <input
                   value={member.number}
-                  onChange={(e) => setMember({ ...member, name: e.target.value })}
+                  onChange={(e) => setMember({ ...member, number: e.target.value })}
                   placeholder="e.g. 100023"
                 />
               </label>

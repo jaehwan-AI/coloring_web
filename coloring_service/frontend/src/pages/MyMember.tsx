@@ -258,20 +258,14 @@ export default function MyMember() {
                     {g.items.map((it) => (
                       <a
                         key={it.id}
-                        // type="button"
                         href={it.url}
-                        target=" blank"
+                        // target=" blank"
                         rel="noreferrer"
-                        onClick={() => setSelectedResult(it)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setSelectedResult(it);
+                        }}
                         style={{
-                          // border: "none",
-                          // padding: 0,
-                          // textAlign: "left",
-                          // cursor: "pointer",
-                          // background: "#fff",
-                          // borderRadius: 12,
-                          // overflow: "hidden",
-                          // boxShadow: "0 6px 14px rgba(0,0,0,0.08)",
                           display: "black",
                           background: "#fff",
                           borderRadius: 12,
