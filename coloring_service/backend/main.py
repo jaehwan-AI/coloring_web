@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from db import init_db, get_session
-from models import Member, ColoredResult
+from models import Member, ColoredResult, Schedule
 
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -120,6 +120,21 @@ class AdminLoginIn(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+class ScheduleCreateIn(BaseModel):
+    title: str
+    start_at: str
+    end_at: Optional[datetime] = None
+    note: Optional[str] = None
+
+class ScheduleOut(BaseModel):
+    id: int
+    title: str
+    start_at: datetime
+    end_at: Optional[datetime] = None
+    note: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
 def create_access_token(subject: str) -> str:
     exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_MINUTES)
@@ -476,6 +491,93 @@ def admin_login(body: AdminLoginIn):
 @app.get("/api/admin/ping")
 def admin_ping(_admin: str = Depends(require_admin)):
     return {"ok": True}
+
+
+# ---------------------------
+# Schedule API
+# ---------------------------
+def parse_dt(v):
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v
+    if isinstance(v, str):
+        v = v.strip()
+        if v == "":
+            return None
+        return datetime.fromisoformat(v)
+    return None  # 예상 못한 타입이면 None 처리(원하면 400으로 에러 처리 가능)
+
+@app.get("/api/schedules", response_model=list[ScheduleOut])
+def list_schedules(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    session: Session = Depends(get_session),
+    _: str = Depends(require_admin),
+):
+    stmt = select(Schedule).order_by(Schedule.start_at.asc())
+
+    if start:
+        stmt = stmt.where(Schedule.start_at >= datetime.combine(start, datetime.min.time()))
+    if end:
+        stmt = stmt.where(Schedule.start_at <= datetime.combine(end, datetime.max.time()))
+
+    return session.exec(stmt).all()
+
+
+@app.post("/api/schedules", response_model=ScheduleOut)
+def create_schedule(
+    payload: ScheduleCreateIn,
+    session: Session = Depends(get_session),
+    _: str = Depends(require_admin),
+):
+    row = Schedule(
+        title=payload.title,
+        start_at=datetime.fromisoformat(payload.start_at),
+        end_at=parse_dt(payload.end_at),
+        note=payload.note,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+@app.delete("/api/schedules/{schedule_id}")
+def delete_schedule(
+    schedule_id: int,
+    session: Session = Depends(get_session),
+    _: str = Depends(require_admin),
+):
+    row = session.get(Schedule, schedule_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    session.delete(row)
+    session.commit()
+    return {"ok": True}
+
+
+@app.put("/api/schedules/{schedule_id}", response_model=ScheduleOut)
+def update_schedule(
+    schedule_id: int,
+    payload: ScheduleCreateIn,
+    session: Session = Depends(get_session),
+    _: str = Depends(require_admin),
+):
+    row = session.get(Schedule, schedule_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    row.title = payload.title
+    row.start_at = datetime.fromisoformat(payload.start_at)
+    row.end_at = datetime.fromisoformat(payload.end_at) if payload.end_at else None
+    row.note = payload.note
+    row.updated_at = datetime.utcnow()
+
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
 
 
 # (선택) 배포 시 frontend 빌드 결과를 백엔드가 서빙하도록 할 때

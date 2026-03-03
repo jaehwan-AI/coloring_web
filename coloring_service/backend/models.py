@@ -33,3 +33,16 @@ class ColoredResult(SQLModel, table=True):
     note: Optional[str] = Field(default=None)
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Schedule(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    title: str = Field(index=True)
+    start_at: datetime = Field(index=True)
+    end_at: Optional[datetime] = Field(default=None, index=True)
+
+    note: Optional[str] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

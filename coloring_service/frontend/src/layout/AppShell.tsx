@@ -38,6 +38,9 @@ export default function AppShell({
             <button className="btn" aria-pressed={page === "member"} onClick={() => setPage("member")}>
               My Member
             </button>
+            <button className="btn" aria-pressed={page === "schedule"} onClick={() => setPage("schedule")}>
+              📅 Schedule
+            </button>
           </nav>
         </div>
 

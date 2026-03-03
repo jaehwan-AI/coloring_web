@@ -5,6 +5,7 @@ import { COLORS,
   floodFillWithBgMask, type RGB } from "./coloring";
 import AppShell from "./layout/AppShell";
 import MyMember from "./pages/MyMember";
+import SchedulePage from "./pages/Schedule";
 import AdminLogin from "./pages/AdminLogin";
 import { clearAdminToken, getAdminToken } from "./auth/adminToken";
 
@@ -63,7 +64,7 @@ export default function App() {
 
   const bgMaskRef = useRef<Uint8Array | null>(null);
 
-  const [page, setPage] = useState<"color" | "member" | "admin">("admin");
+  const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("admin");
   const [adminAuthed, setAdminAuthed] = useState(false);
 
   useEffect(() => {
@@ -461,6 +462,8 @@ export default function App() {
     >
       {page === "member" ? (
         <MyMember />
+      ) : page === "schedule" ? (
+        <SchedulePage />
       ) : (
         <>
           <div className="colorLayout3">
