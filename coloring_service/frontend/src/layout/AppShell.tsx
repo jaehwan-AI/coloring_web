@@ -2,58 +2,101 @@ import React from "react";
 import "./appShell.css";
 import { useViewportVars } from "./useViewportVars";
 
-type Page = "color" | "member";
-
-export type PageType = "color" | "member" | "admin";
+export type PageType = "color" | "member" | "schedule" | "admin";
 
 type Props = {
   page: PageType;
   setPage: (p: PageType) => void;
-
   colorToolbar?: React.ReactNode;
-
   children: React.ReactNode;
 };
 
-export default function AppShell({
-  page,
-  setPage,
-  colorToolbar,
+function NavIcon({
+  active,
+  label,
+  onClick,
   children,
-}: Props) {
-  
-  // iPad / 모바일 visualViewport 대응
-  useViewportVars(".appHeader");
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      className="railBtn"
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="railIcon">{children}</span>
+    </button>
+  );
+}
+
+export default function AppShell({ page, setPage, colorToolbar, children }: Props) {
+  // ✅ 상단바 기준으로 visualViewport 대응
+  useViewportVars(".topBar");
+
+  const isSchedule = page === "schedule";
 
   return (
-    <div className="appShell">
-      <header className="appHeader">
-        <div className="appHeaderInner">
-          <div style={{ fontWeight: 900 }}>Member Management</div>
-
-          <nav className="navGroup">
-            <button className="btn" aria-pressed={page === "color"} onClick={() => setPage("color")}>
-              Color
-            </button>
-            <button className="btn" aria-pressed={page === "member"} onClick={() => setPage("member")}>
-              My Member
-            </button>
-            <button className="btn" aria-pressed={page === "schedule"} onClick={() => setPage("schedule")}>
-              📅 Schedule
-            </button>
-          </nav>
-        </div>
-
-        {page === "color" && colorToolbar && (
-          <div className="toolBar">
-            {colorToolbar}
+    <div className="appBg">
+      <div className="appFrame">
+        {/* 1) Icon Rail */}
+        <aside className="rail">
+          <div className="railTop">
+            <div className="brandDot" />
           </div>
-        )}
-      </header>
 
-      <main className="appMain">
-        <div className="page">{children}</div>
-      </main>
+          <div className="railGroup">
+            <NavIcon active={page === "color"} label="Color" onClick={() => setPage("color")}>
+              🎨
+            </NavIcon>
+            <NavIcon active={page === "member"} label="My Member" onClick={() => setPage("member")}>
+              👤
+            </NavIcon>
+            <NavIcon active={page === "schedule"} label="Schedule" onClick={() => setPage("schedule")}>
+              📅
+            </NavIcon>
+          </div>
+
+          <div className="railBottom">
+            <NavIcon active={page === "admin"} label="Admin" onClick={() => setPage("admin")}>
+              ⚙️
+            </NavIcon>
+          </div>
+        </aside>
+
+        {/* Main */}
+        <section className="main">
+          <header className="topBar">
+            <div className="topBarLeft">
+              <div className="topTitle">
+                {page === "color"
+                  ? "Color"
+                  : page === "member"
+                  ? "My Member"
+                  : page === "schedule"
+                  ? "Schedule"
+                  : "Admin"}
+              </div>
+              <div className="topHint">Member Management</div>
+            </div>
+
+            {/* Color 페이지 툴바는 업로드 UI처럼 상단 우측에 “pill 버튼”으로 */}
+            <div className="topBarRight">
+              {page === "color" && colorToolbar ? <div className="toolbarPills">{colorToolbar}</div> : null}
+            </div>
+          </header>
+
+          <main className="content">
+            <div className="contentCard">{children}</div>
+          </main>
+        </section>
+      </div>
     </div>
   );
 }

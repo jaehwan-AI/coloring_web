@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import "./MyMember.css";
 
 
 type Member = {
@@ -215,91 +216,83 @@ export default function MyMember() {
   }, []);
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 12 }}>
-      <h2 style={{ marginTop: 0 }}>My Member</h2>
+    <div className="myMemberPage">
+            <div className="myMemberLayout">
+        {/* LEFT */}
+        <aside className="panelCard" style={{ overflow: "auto" }}>
+          <div style={{ fontWeight: 950, fontSize: 18 }}>My Member</div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 김종학" />
-        </label>
+          <label className="fieldLabel" style={{ marginTop: 12 }}>
+            Name
+            <input
+              className="textInput"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="예: 김종학"
+            />
+          </label>
 
-        <button className="btn" onClick={load} disabled={loading}>
-          {loading ? "Loading..." : "Load"}
-        </button>
+          <button className="btn" onClick={load} disabled={loading}>
+            {loading ? "Loading..." : "Load"}
+          </button>
+
+          {msg ? <div style={{ marginTop: 10, color: "rgba(0,0,0,0.6)" }}>{msg}</div> : null}
+
+          {data ? (
+            <div className="memberInfoCard">
+              <div>
+                <b>{data.member.name}</b> (#{data.member.number})
+              </div>
+              <div style={{ marginTop: 6, color: "rgba(0,0,0,0.6)" }}>
+                Height: {data.member.height_cm ?? "-"} cm / Weight: {data.member.weight_kg ?? "-"} kg
+              </div>
+              {data.member.memo ? <div style={{ marginTop: 6 }}>{data.member.memo}</div> : null}
+            </div>
+          ) : null}
+        </aside>
+
+        {/* RIGHT */}
+        <section className="panelCard" style={{ overflow: "auto" }}>
+          <div className="resultsHeader">
+            <div style={{ fontWeight: 900 }}>Results</div>
+          </div>
+
+          {!data ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>왼쪽에서 이름을 검색하세요.</div>
+          ) : grouped.length === 0 ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>저장된 색칠 결과가 없습니다.</div>
+          ) : (
+            grouped.map((g) => (
+              <div key={g.date} style={{ marginBottom: 16 }}>
+                <div style={{ fontWeight: 900, margin: "10px 0" }}>{g.date}</div>
+                <div className="resultsGrid">
+                  {g.items.map((it) => (
+                    <a
+                      key={it.id}
+                      href={it.url}
+                      className="resultCard"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setSelectedResult(it);
+                      }}
+                      title={`Result #${it.id}`}
+                    >
+                      <img className="resultThumb" src={it.url} alt={`result-${it.id}`} loading="lazy" />
+                      <div className="resultMeta">#{it.id}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </section>
       </div>
 
-      {msg && <div style={{ marginTop: 10, color: "#666" }}>{msg}</div>}
-
-      {data && (
-        <div style={{ marginTop: 14 }}>
-          <div style={{ background: "#fff", borderRadius: 12, padding: 12, boxShadow: "0 8px 20px rgba(0,0,0,0.06)" }}>
-            <div><b>{data.member.name}</b> (#{data.member.number})</div>
-            <div style={{ color: "#666", marginTop: 6 }}>
-              Height: {data.member.height_cm ?? "-"} cm / Weight: {data.member.weight_kg ?? "-"} kg
-            </div>
-            {data.member.memo ? <div style={{ marginTop: 6 }}>{data.member.memo}</div> : null}
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            {grouped.length === 0 ? (
-              <div style={{ color: "#666" }}>저장된 색칠 결과가 없습니다.</div>
-            ) : (
-              grouped.map((g) => (
-                <div key={g.date} style={{ marginBottom: 18 }}>
-                  <h3 style={{ margin: "10px 0" }}>{g.date}</h3>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-                      gap: 10,
-                    }}
-                  >
-                    {g.items.map((it) => (
-                      <a
-                        key={it.id}
-                        href={it.url}
-                        // target=" blank"
-                        rel="noreferrer"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setSelectedResult(it);
-                        }}
-                        style={{
-                          display: "black",
-                          background: "#fff",
-                          borderRadius: 12,
-                          overflow: "hidden",
-                          boxShadow: "0 6px 14px rgba(0,0,0,0.08)",
-                          textDecoration: "none",
-                          color: "inherit",
-                        }}
-                        title={`Result #${it.id}`}
-                      >
-                        <img
-                          src={it.url}
-                          alt={`result-${it.id}`}
-                          style={{ width: "100%", height: 140, objectFit: "cover", display: "block" }}
-                          loading="lazy"
-                        />
-                        <div style={{ padding: 8, fontSize: 12, color: "#666" }}>
-                          #{it.id}
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Result detail modal (image + note) */}
+      {/* Result detail modal (image  note) */}
       {selectedResult && (
-        <div style={styles.modalOverlay} onClick={() => setSelectedResult(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
+        <div className="modalOverlay" onClick={() => setSelectedResult(null)}>
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div className="mmModalHeader">
               <div style={{ fontWeight: 800 }}>
                 {selectedResult.selected_date ?? "No Date"} · Result #{selectedResult.id}
               </div>
@@ -317,169 +310,20 @@ export default function MyMember() {
                 </button>
               </div>
             </div>
-
-            <div
-              className="member-result-modal-grid"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 360px",
-                gap: 0,
-              }}
-            >
-              <div style={{ padding: 12, background: "#fafafa" }}>
-                <img src={selectedResult.url} alt="selected" style={styles.previewImg} />
+            <div className="mmModalGrid">
+              <div className="mmPreviewWrap">
+                <img className="mmPreviewImg" src={selectedResult.url} alt="selected" />
               </div>
-
-              <div style={{ padding: 12 }}>
+              <div className="mmNoteBox">
                 <div style={{ fontWeight: 800, marginBottom: 8 }}>Note</div>
-                <div
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    border: "1px solid rgba(0,0,0,0.12)",
-                    borderRadius: 12,
-                    padding: 12,
-                    minHeight: 140,
-                    background: "#fff",
-                  }}
-                >
+                <div className="mmNoteContent">
                   {selectedResult.note?.trim() ? selectedResult.note : "No note saved."}
                 </div>
               </div>
             </div>
-
-            {/* Mobile/iPad: stack columns */}
-            <style>{`
-              @media (max-width: 900px) {
-                .member-result-modal-grid {
-                  grid-template-columns: 1fr !important;
-                }
-              }
-            `}</style>
           </div>
         </div>
       )}
-
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  headerRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-    marginBottom: 12
-  },
-  btn: {
-    border: "1px solid rgba(0,0,0,0.14)",
-    background: "#fff",
-    borderRadius: 12,
-    padding: "10px 12px",
-    fontWeight: 700,
-    cursor: "pointer"
-  },
-  btnSmall: {
-    border: "1px solid rgba(0,0,0,0.14)",
-    background: "#fff",
-    borderRadius: 10,
-    padding: "8px 10px",
-    fontWeight: 700,
-    cursor: "pointer",
-    fontSize: 12
-  },
-  btnDanger: {
-    borderColor: "rgba(220,0,0,0.25)",
-  },
-  errorBox: {
-    background: "rgba(220,0,0,0.08)",
-    border: "1px solid rgba(220,0,0,0.18)",
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 12,
-    color: "#7a0000",
-    fontWeight: 600
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-    gap: 12
-  },
-  card: {
-    background: "#fff",
-    borderRadius: 16,
-    boxShadow: "0 8px 20px rgba(0,0,0,0.06)",
-    overflow: "hidden"
-  },
-  thumbBtn: {
-    border: "none",
-    background: "transparent",
-    padding: 0,
-    width: "100%",
-    cursor: "pointer"
-  },
-  thumbImg: {
-    width: "100%",
-    height: 160,
-    objectFit: "cover",
-    display: "block",
-    background: "#f3f3f3"
-  },
-  meta: {
-    padding: 10,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10
-  },
-  metaTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  dateText: {
-    fontSize: 12,
-    color: "#666"
-  },
-  actions: {
-    display: "flex",
-    gap: 8,
-    justifyContent: "space-between"
-  },
-  modalOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.45)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 16,
-    zIndex: 50
-  },
-  modal: {
-    width: "min(980px, 96vw)",
-    maxHeight: "90vh",
-    background: "#fff",
-    borderRadius: 18,
-    overflow: "hidden",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.25)"
-  },
-  modalHeader: {
-    padding: 12,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    flexWrap: "wrap",
-    borderBottom: "1px solid rgba(0,0,0,0.08)"
-  },
-  previewImg: {
-    width: "100%",
-    height: "auto",
-    maxHeight: "75vh",
-    objectFit: "contain",
-    display: "block",
-    background: "#fafafa",
-    borderRadius: 12
-  }
-};

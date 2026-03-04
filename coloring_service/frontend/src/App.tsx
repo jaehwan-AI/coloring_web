@@ -425,7 +425,7 @@ export default function App() {
       // keep existing top buttons (red/blue/undo/reset/save)
       colorToolbar={
         <>
-          <label className="btn">
+          <label className="btn btnUpload">
             📷 Upload
             <input
               type="file"
@@ -468,7 +468,7 @@ export default function App() {
         <>
           <div className="colorLayout3">
             {/* Left panel: member input/load/save */}
-            <section className="memberPanel">
+            <section className="panelCard memberPanel">
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Member</h3>
 
               <div className="memberRow">
@@ -547,7 +547,7 @@ export default function App() {
             </section>
 
             {/* Right: canvas */}
-            <section className="canvasWrap">
+            <section className="panelCard canvasWrap">
               <canvas
                 ref={canvasRef}
                 className="canvasFullHeight"
@@ -565,7 +565,7 @@ export default function App() {
               />
             </section>
 
-            <section className="notePanel">
+            <section className="panelCard notePanel">
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Note</h3>
               <textarea
                 value={resultNote}
@@ -575,96 +575,6 @@ export default function App() {
               />
             </section>
           </div>
-
-          {/* <div className="hint" style={{ marginTop: 10 }}>
-            {hasImage ? "Tap/click a region to fill it. Background is not painted." : "Upload a sketch image from the top toolbar."}
-          </div> */}
-
-          {/* Layout CSS. If you already have these in a global CSS file, move them there. */}
-          <style>{`
-            .colorLayout3 {
-              display: grid;
-              grid-template-columns: 340px 1fr 320px;
-              gap: 12px;
-              align-items: start;
-            }
-            @media (max-width: 1100px) {
-              .colorLayout3 {
-                grid-template-columns: 340px 1fr;
-                grid-template-areas:
-                  "member canvas"
-                  "note note";
-              }
-              .memberPanel { grid-area: member; }
-              .canvasWrap { grid-area: canvas; }
-              .notePanel { grid-area: note; }
-            }
-            @media (max-width: 900px) {
-              .colorLayout3 {
-                grid-template-columns: 1fr;
-                grid-template-areas:
-                  "member"
-                  "canvas"
-                  "note";
-              }
-            }
-            .memberPanel {
-              background: #fff;
-              border-radius: 14px;
-              box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-              padding: 12px;
-              pointer-events: auto;
-              touch-action: manipulation;
-              position: relative;
-              z-index: 2;
-            }
-            .memberRow {
-              display: flex;
-              gap: 8px;
-              align-items: flex-end;
-              margin-bottom: 10px;
-            }
-            .memberPanel label {
-              display: flex;
-              flex-direction: column;
-              gap: 6px;
-              font-weight: 700;
-              font-size: 13px;
-              margin-bottom: 10px;
-            }
-            .memberPanel input,
-            .memberPanel textarea {
-              border: 1px solid rgba(0,0,0,0.18);
-              border-radius: 10px;
-              padding: 10px;
-              font-size: 14px;
-              pointer-events: auto;
-              touch-action: manipulation;
-              -webkit-user-select: text;
-              user-select: text;
-            }
-            .canvasWrap {
-              background: #fff;
-              border-radius: 14px;
-              box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-              padding: 10px;
-              height: calc(var(--vvh, 100dvh) - var(--header-h, 56px) - 24px);
-              min-height: 320px;
-            }
-            .canvasFullHeight {
-              width: 100%;
-              height: 100%;
-              display: block;
-              background: #fff;
-              border-radius: 10px;
-              touch-action: none; /* allow pointer drawing without scrolling */
-            }
-            .noteTextarea{
-              width: 100%;
-              min-height: 320px;
-              resize: vertical;
-            }
-          `}</style>
         </>
       )}
       {page === "admin" && <AdminLogin />}

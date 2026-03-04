@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import "./scheduleOverrides.css";
+import "./Schedule.css";
 
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale";
@@ -78,6 +80,9 @@ export default function SchedulePage() {
   const [selectedDay, setSelectedDay] = useState<Date>(new Date());
   const [editingId, setEditingId] = useState<number | null>(null);
 
+  const [q, setQ] = useState("");
+  const [showOnlySelectedDay, setShowOnlySelectedDay] = useState(true);
+
   async function load() {
     setLoading(true);
     try {
@@ -123,6 +128,19 @@ export default function SchedulePage() {
       })
       .sort((a, b) => a.start.getTime() - b.start.getTime());
   }, [events, selectedDay]);
+
+  const leftListEvents = useMemo(() => {
+    const base = showOnlySelectedDay ? dayEvents : events;
+
+    const qq = q.trim().toLowerCase();
+    if (!qq) return base;
+
+    return base.filter((ev) => {
+      const t = (ev.title || "").toLowerCase();
+      const n = (ev.resource.note || "").toLowerCase();
+      return t.includes(qq) || n.includes(qq);
+    });
+  }, [showOnlySelectedDay, dayEvents, events, q]);
 
   async function saveSchedule() {
     if (!title.trim()) {
@@ -183,122 +201,170 @@ export default function SchedulePage() {
   }
 
   return (
-    <div style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <h2 style={{ margin: 0 }}>일정 캘린더</h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="btn" onClick={() => setView(Views.MONTH)} aria-pressed={view === Views.MONTH}>
-            월
-          </button>
-          <button className="btn" onClick={() => setView(Views.WEEK)} aria-pressed={view === Views.WEEK}>
-            주
-          </button>
-          <button className="btn" onClick={load} disabled={loading}>
-            {loading ? "불러오는 중..." : "새로고침"}
-          </button>
-          <button
-            className="btn"
-            onClick={() => 
-                {setEditingId(null);
-                openCreateModal(new Date(), addHours(new Date(), 1));
-            }}
-            // title="기본 1시간 일정 생성"
-          >
-            + 일정
-          </button>
-        </div>
-      </div>
+    <div className="schedulePage">
+      <div className="scheduleLayout">
+        {/* LEFT PANEL */}
+        <aside className="panelCard scheduleLeft">
+          <div className="scheduleLeftTitle">일정</div>
 
-      <div style={{ marginTop: 12, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 14, padding: 10 }}>
-        <Calendar
-          localizer={localizer}
-          events={events}
-          startAccessor="start"
-          endAccessor="end"
-          date={date}
-          view={view}
-          onView={(v) => setView(v)}
-          onNavigate={(d) => setDate(d)}
-          selectable
-          popup
-          style={{ height: 720 }}
-          onSelectSlot={(slot) => {
-            const s = slot.start as Date;
-            const e = slot.end as Date;
+          {/* 검색 */}
+          <input
+            className="scheduleSearch"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="검색(제목/노트)"
+          />
 
-            setSelectedDay(new Date(s));
-            
-            // Month view에서 end가 다음날로 잡히는 경우가 많아서 "날짜 기준 기본 시간"으로 고정
-            if (view === Views.MONTH) {
-                const { start, end } = setDefaultTimeRangeForDay(s);
-                openCreateModal(start, end);
-                return;
-            }
-            
-            // Week view는 드래그한 시간 그대로 사용
-            openCreateModal(s, e);
-          }}
-          onSelectEvent={(ev) => {
-            setSelectedDay(new Date(ev.start));
-            const item = ev.resource;
-
-            setEditingId(item.id);
-            setTitle(item.title);
-            setStartAt(toLocalInputValue(new Date(item.start_at)));
-            setEndAt(item.end_at ? toLocalInputValue(new Date(item.end_at)) : "");
-            setNote(item.note || "");
-            setOpen(true);
-          }}
-          messages={{
-            today: "오늘",
-            previous: "이전",
-            next: "다음",
-            month: "월",
-            week: "주",
-            day: "일",
-            agenda: "목록",
-            date: "날짜",
-            time: "시간",
-            event: "일정",
-            noEventsInRange: "표시할 일정이 없습니다.",
-            showMore: (total) => `+${total}개 더보기`,
-          }}
-        />
-        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-        <div style={{ fontWeight: 800 }}>
-            선택 날짜: {selectedDay.toLocaleDateString()}
-        </div>
-
-        {dayEvents.length === 0 ? (
-            <div style={{ color: "#666" }}>이 날짜에 일정이 없습니다.</div>
-        ) : (
-            dayEvents.map((ev) => (
-            <div
-                key={ev.id}
-                style={{
-                border: "1px solid rgba(0,0,0,0.12)",
-                borderRadius: 12,
-                padding: 12,
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                }}
+          {/* 토글: 선택 날짜만 / 전체 */}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button
+              className="btn"
+              aria-pressed={showOnlySelectedDay}
+              onClick={() => setShowOnlySelectedDay(true)}
             >
-                <div>
-                <div style={{ fontWeight: 700 }}>{ev.title}</div>
-                <div style={{ fontSize: 13, color: "#444", marginTop: 4 }}>
-                    {ev.start.toLocaleTimeString()} ~ {ev.end.toLocaleTimeString()}
-                </div>
-                {ev.resource.note ? (
-                    <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{ev.resource.note}</div>
-                ) : null}
-                </div>
+              선택 날짜
+            </button>
+            <button
+              className="btn"
+              aria-pressed={!showOnlySelectedDay}
+              onClick={() => setShowOnlySelectedDay(false)}
+            >
+              전체
+            </button>
+          </div>
 
-                <button className="btn" onClick={() => remove(ev.id)}>🗑️ 삭제</button>
+          {/* 선택 날짜 표시 */}
+          <div style={{ marginTop: 12, fontWeight: 800 }}>
+            선택 날짜: {selectedDay.toLocaleDateString()}
+          </div>
+
+          {/* 리스트 */}
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {leftListEvents.length === 0 ? (
+              <div style={{ color: "#666" }}>표시할 일정이 없습니다.</div>
+            ) : (
+              leftListEvents.map((ev) => (
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => {
+                    // 리스트 클릭 시: 해당 이벤트 시간대로 캘린더 이동 + 선택 날짜 갱신 + 편집 모달 열기
+                    setSelectedDay(new Date(ev.start));
+                    setDate(new Date(ev.start));
+
+                    const item = ev.resource;
+                    setEditingId(item.id);
+                    setTitle(item.title);
+                    setStartAt(toLocalInputValue(new Date(item.start_at)));
+                    setEndAt(item.end_at ? toLocalInputValue(new Date(item.end_at)) : "");
+                    setNote(item.note || "");
+                    setOpen(true);
+                  }}
+                  style={{
+                    textAlign: "left",
+                    border: "1px solid rgba(0,0,0,0.12)",
+                    borderRadius: 12,
+                    padding: 12,
+                    background: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 800 }}>{ev.title}</div>
+                  <div style={{ fontSize: 13, color: "#444", marginTop: 4 }}>
+                    {ev.start.toLocaleTimeString()} ~ {ev.end.toLocaleTimeString()}
+                  </div>
+                  {ev.resource.note ? (
+                    <div style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "#333" }}>
+                      {ev.resource.note}
+                    </div>
+                  ) : null}
+                  <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                    <span
+                      className="btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        remove(ev.id);
+                      }}
+                    >
+                      🗑️ 삭제
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </aside>
+        
+        {/* RIGHT: CALENDAR */}
+        <section className="panelCard scheduleRight">
+          {/* 기존 상단 버튼은 오른쪽 영역에 둬도 좋음 */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ fontWeight: 950, fontSize: 18 }}>일정 캘린더</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button className="btn" onClick={() => setView(Views.MONTH)} aria-pressed={view === Views.MONTH}>월</button>
+              <button className="btn" onClick={() => setView(Views.WEEK)} aria-pressed={view === Views.WEEK}>주</button>
+              <button className="btn" onClick={load} disabled={loading}>{loading ? "불러오는 중..." : "새로고침"}</button>
+              <button className="btn" onClick={() => { setEditingId(null); openCreateModal(new Date(), addHours(new Date(), 1)); }}>
+                + 일정
+              </button>
             </div>
-            ))
-        )}
-        </div>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <Calendar
+              localizer={localizer}
+              events={events}
+              startAccessor="start"
+              endAccessor="end"
+              date={date}
+              view={view}
+              onView={(v) => setView(v)}
+              onNavigate={(d) => setDate(d)}
+              selectable
+              popup
+              
+              /* ✅ 달력이 화면 대부분을 차지하도록: 높이는 화면 기준으로 유동 */
+              style={{ height: "calc(100vh - 220px)", minHeight: 720, width: "100%" }}
+              
+              onSelectSlot={(slot) => {
+                const s = slot.start as Date;
+                const e = slot.end as Date;
+                setSelectedDay(new Date(s));
+
+                if (view === Views.MONTH) {
+                  const { start, end } = setDefaultTimeRangeForDay(s);
+                  openCreateModal(start, end);
+                  return;
+                }
+                openCreateModal(s, e);
+              }}
+              onSelectEvent={(ev) => {
+                setSelectedDay(new Date(ev.start));
+                const item = ev.resource;
+                setEditingId(item.id);
+                setTitle(item.title);
+                setStartAt(toLocalInputValue(new Date(item.start_at)));
+                setEndAt(item.end_at ? toLocalInputValue(new Date(item.end_at)) : "");
+                setNote(item.note || "");
+                setOpen(true);
+              }}
+              messages={{
+              today: "오늘",
+              previous: "이전",
+              next: "다음",
+              month: "월",
+              week: "주",
+              day: "일",
+              agenda: "목록",
+              date: "날짜",
+              time: "시간",
+              event: "일정",
+              noEventsInRange: "표시할 일정이 없습니다.",
+              showMore: (total) => `+${total}개 더보기`,
+            }}
+            />
+          </div>
+        </section>
       </div>
 
       {/* 아주 단순한 모달 (라이브러리 없이) */}

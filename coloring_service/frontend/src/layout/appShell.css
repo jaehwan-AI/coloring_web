@@ -1,138 +1,180 @@
 :root{
-  /* z-index tokens */
-  --z-base: 0;
-  --z-content: 1;
-  --z-header: 100;
-  --z-drawer: 300;
-  --z-modal: 1000;
-  --z-toast: 1200;
+  --vvh: 100dvh;
 
-  /* will be set by JS (visualViewport) */
-  --vvh: 100dvh;         /* visual viewport height */
-  --header-h: 56px;      /* measured header height */
+  /* 업로드 UI 느낌의 라이트 퍼플 톤 */
+  --bg: #f6f7ff;
+  --card: #ffffff;
+  --muted: rgba(0,0,0,0.55);
+  --text: rgba(0,0,0,0.88);
+  --line: rgba(0,0,0,0.08);
+
+  --r-lg: 18px;
+  --r-md: 14px;
+
+  --shadow-md: 0 10px 26px rgba(0,0,0,0.08);
 }
 
-/* page base */
 html, body, #root { height: 100%; }
 body{
   margin:0;
-  background:#f6f6f6;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
-  -webkit-text-size-adjust: 100%;
+  background: var(--bg);
 }
 
-/* AppShell root takes real usable height */
-.appShell{
-  height: var(--vvh);
+/* 전체 프레임(업로드 UI의 큰 둥근 카드) */
+.appRoot{
+  min-height: 100vh;
+  width: 100%;
+}
+
+.appFrame{
+  width: 100%;
+  height: 100%;
+  display:grid;
+  grid-template-columns: 64px 1fr;
+}
+
+/* 레일 */
+.rail{
+  border-right: 1px solid var(--line);
   display:flex;
   flex-direction:column;
-  overflow:hidden; /* prevents body scroll fighting */
-  position:relative;
-  z-index: var(--z-base);
+  align-items:center;
+  padding: 12px 8px;
+  gap: 10px;
+  background: #fff;
 }
 
-/* Fixed header: the only fixed element (besides modal) */
-.appHeader{
-  position: sticky; /* ✅ sticky is safer than fixed in many mobile cases */
-  top:0;
-  z-index: var(--z-header);
-  background:#fff;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
-  padding-top: env(safe-area-inset-top);
+.brandDot{
+  width: 28px; height: 28px;
+  border-radius: 10px;
+  background: rgba(111, 99, 247, 0.18);
+  border: 1px solid rgba(111, 99, 247, 0.22);
 }
 
-/* header inner area */
-.appHeaderInner{
+.railTop{ height: 44px; display:flex; align-items:center; justify-content:center; }
+.railGroup{ display:flex; flex-direction:column; gap: 10px; flex:1; padding-top: 6px; }
+.railBottom{ display:flex; flex-direction:column; gap: 10px; }
+
+.railBtn{
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.8);
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.railBtn[aria-pressed="true"]{
+  background: rgba(111, 99, 247, 0.14);
+  border-color: rgba(111, 99, 247, 0.28);
+  box-shadow: 0 0 0 3px rgba(111, 99, 247, 0.12) inset;
+}
+.railIcon{ font-size: 18px; }
+
+/* 메인 */
+.main{
+  display:flex;
+  flex-direction:column;
+  overflow: 0;
+}
+
+.topBar{
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:10px;
-  padding: 10px 12px;
-
-  /* ✅ toolbar와의 간격 확보 */
-  /* margin-bottom: 8px; */
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255,255,255,0.95);
 }
 
-.appTitle {
-  font-weight: 900;
-}
+.topTitle{ font-weight: 950; font-size: 18px; color: var(--text); }
+.topHint{ font-size: 12px; color: var(--muted); margin-top: 3px; }
 
-.toolBar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-
-  /* ✅ 정렬 */
-  justify-content: flex-end;
-  
-  /* ✅ 위/아래 여백 */
-  padding: 8px 12px 10px;
-  
-  /* 구분선 + 시각적 안정감 */
-  /* border-top: 1px solid rgba(0,0,0,0.06); */
-}
-
-/* nav buttons */
-.navGroup{
+.toolbarPills{
   display:flex;
-  gap:8px;
   flex-wrap:wrap;
+  gap: 8px;
+  justify-content:flex-end;
 }
+
+/* 컨텐츠 카드 */
+.content{
+  flex:1;
+  overflow:auto;
+  padding: 16px;
+}
+
+.contentCard{
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  padding: 16px;
+  min-height: calc(100vh - 72px - 32px);
+}
+
+/* 버튼(전역 통일) */
 .btn{
-  border:1px solid rgba(0,0,0,0.14);
-  background:#fff;
-  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: #fff;
+  border-radius: 999px;
   padding: 10px 12px;
-  font-weight: 700;
-  cursor:pointer;
-  user-select:none;
+  cursor: pointer;
+  font-weight: 750;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  height: 40px;
 }
 .btn[aria-pressed="true"]{
-  box-shadow: 0 0 0 3px rgba(0,0,0,0.08) inset;
+  box-shadow: 0 0 0 3px rgba(111, 99, 247, 0.14) inset;
+  border-color: rgba(111, 99, 247, 0.25);
+}
+.btn:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
-/* main content scroll area */
-.appMain{
-  position:relative;
-  z-index: var(--z-content);
-  flex:1;
-  overflow:auto; /* ✅ content scroll here */
-  -webkit-overflow-scrolling: touch;
-
-  /* safe-area bottom for iPhone home bar */
-  padding-bottom: env(safe-area-inset-bottom);
+/* ✅ Upload 버튼도 다른 .btn과 동일한 높이/정렬로 */
+.btnUpload{
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+}
+.btnUpload input[type="file"]{
+  display: none;
 }
 
-/* page container */
-.page{
-  padding: 12px;
-}
-
-/* -------- Modal layer (optional) -------- */
-.modalOverlay{
+/* 모달 공통 */
+.modelOverlay{
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal);
+  z-index: 1000;
   background: rgba(0,0,0,0.45);
-  display:flex;
-  justify-content:center;
-  align-items:center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   padding: 16px;
-  /* ensure it catches taps */
-  pointer-events: auto;
 }
-
-.modalCard{
+.modelCard{
   width: min(980px, 96vw);
   max-height: calc(var(--vvh) - 24px);
-  background:#fff;
+  background: #fff;
   border-radius: 18px;
-  overflow:hidden;
+  overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.25);
 }
 
-/* -------- Safety: prevent hidden overlay from blocking clicks -------- */
-/* Only use overlays with pointer-events enabled if visible */
-.hiddenOverlay{
-  pointer-events:none !important;
+/* 모바일에서 rail 폭 살짝 줄이기 */
+@media (max-width: 720px){
+  .appFrame{ grid-template-columns: 54px 1fr; }
+  .railBtn{ width: 40px; height: 40px; }
 }
