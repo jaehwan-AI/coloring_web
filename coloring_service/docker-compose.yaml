@@ -10,7 +10,7 @@ services:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
-  app:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
