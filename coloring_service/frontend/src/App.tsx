@@ -281,9 +281,11 @@ export default function App() {
     if (!imgUrl) return;
 
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
-      imgRef.current = img;
+      console.log("image loaded", img.naturalWidth, img.naturalHeight);
 
+      imgRef.current = img;
       const canvas = canvasRef.current!;
       const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 
@@ -310,6 +312,7 @@ export default function App() {
       const est = estimateBackground(ctx, canvas.width, canvas.height);
       setBg(est.bg);
       setBgTol(est.tol);
+      console.log("estimated bg", est);
 
       // ✅ 이 줄이 없어서 hasMask=false 였음
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -318,9 +321,11 @@ export default function App() {
         est.bg,   // ⚠️ 반드시 est.bg 사용 (state 아님)
         est.tol
       );
+
+      console.log("mask created", !!bgMaskRef.current);
     };
 
-    img.src = imgUrl + `?v=${Date.now()}`;
+    img.src = imgUrl;
   }, [imgUrl]);
 
   // redraw on resize/orientation
@@ -393,6 +398,7 @@ export default function App() {
   }
 
   function paintAt(x: number, y: number) {
+    console.log("paintAt called", x, y);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d", { willReadFrequently: true })!;

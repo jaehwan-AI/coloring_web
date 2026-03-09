@@ -38,7 +38,10 @@ if USE_S3:
     _s3 = boto3.client(
         "s3",
         region_name=AWS_REGION,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+        ),
     )
 
 def s3_put_bytes(key: str, data: bytes, content_type: str):
