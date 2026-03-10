@@ -1,6 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./MyMember.css";
 
+const API_BASE = 
+  window.location.hostname === "localhost"
+    ? "http://localhost:8000"
+    : `${window.location.protocol}//${window.location.hostname}:8000`;
+
+function toApiUrl(url?: string | null) {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${API_BASE}${url}`;
+}
 
 type Member = {
   id: number;
@@ -269,7 +279,7 @@ export default function MyMember() {
                   {g.items.map((it) => (
                     <a
                       key={it.id}
-                      href={it.url}
+                      href={toApiUrl(it.url)}
                       className="resultCard"
                       onClick={(e) => {
                         e.preventDefault();
@@ -277,7 +287,15 @@ export default function MyMember() {
                       }}
                       title={`Result #${it.id}`}
                     >
-                      <img className="resultThumb" src={it.url} alt={`result-${it.id}`} loading="lazy" />
+                      <img
+                        className="resultThumb"
+                        src={toApiUrl(it.url)}
+                        alt={`result-${it.id}`}
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
                       <div className="resultMeta">#{it.id}</div>
                     </a>
                   ))}
@@ -299,7 +317,7 @@ export default function MyMember() {
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <a
                   className="btn"
-                  href={selectedResult.url}
+                  href={toApiUrl(selectedResult.url)}
                   download
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -312,7 +330,14 @@ export default function MyMember() {
             </div>
             <div className="mmModalGrid">
               <div className="mmPreviewWrap">
-                <img className="mmPreviewImg" src={selectedResult.url} alt="selected" />
+                <img
+                  className="mmPreviewImg"
+                  src={toApiUrl(selectedResult.url)}
+                  alt="selected"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).alt = "이미지를 찾을 수 없습니다.";
+                  }}
+                />
               </div>
               <div className="mmNoteBox">
                 <div style={{ fontWeight: 800, marginBottom: 8 }}>Note</div>
