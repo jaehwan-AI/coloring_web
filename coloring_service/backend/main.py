@@ -107,6 +107,7 @@ init_db()
 class MemberUpsertIn(BaseModel):
     number: str
     name: str
+    birth_date: Optional[date] = None
     memo: Optional[str] = None
 
     height_cm: Optional[float] = None
@@ -116,6 +117,7 @@ class MemberOut(BaseModel):
     id: int
     number: str
     name: str
+    birth_date: Optional[date] = None
     memo: Optional[str] = None
 
     height_cm: Optional[float] = None
@@ -206,6 +208,7 @@ def upsert_member(payload: MemberUpsertIn, session: Session = Depends(get_sessio
 
     if m:
         m.name = payload.name
+        m.birth_date = payload.birth_date
         m.memo = payload.memo
         m.height_cm = payload.height_cm
         m.weight_kg = payload.weight_kg
@@ -217,7 +220,8 @@ def upsert_member(payload: MemberUpsertIn, session: Session = Depends(get_sessio
 
     m = Member(
         number=payload.number, 
-        name=payload.name, 
+        name=payload.name,
+        birth_date=payload.birth_date,
         memo=payload.memo,
         height_cm=payload.height_cm,
         weight_kg=payload.weight_kg
@@ -236,6 +240,7 @@ def get_member(name: str, session: Session = Depends(get_session)):
         "id": m.id,
         "number": m.number,
         "name": m.name,
+        "birth_date": m.birth_date,
         "memo": m.memo,
         "height_cm": m.height_cm,
         "weight_kg": m.weight_kg,
@@ -282,6 +287,7 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
             "id": m.id,
             "number": m.number,
             "name": m.name,
+            "birth_date": m.birth_date,
             "height_cm": getattr(m, "height_cm", None),
             "weight_kg": getattr(m, "weight_kg", None),
             "memo": m.memo,
@@ -301,13 +307,23 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
     m = session.exec(select(Member).where(Member.number == payload.member.number)).first()
     if m:
         m.name = payload.member.name
+        m.birth_date = payload.member.birth_date
         m.memo = payload.member.memo
+        m.height_cm = payload.member.height_cm
+        m.weight_kg = payload.member.weight_kg
         m.updated_at = datetime.utcnow()
         session.add(m)
         session.commit()
         session.refresh(m)
     else:
-        m = Member(number=payload.member.number, name=payload.member.name, memo=payload.member.memo)
+        m = Member(
+            number=payload.member.number,
+            name=payload.member.name,
+            birth_date=payload.member.birth_date,
+            memo=payload.member.memo,
+            height_cm=payload.member.height_cm,
+            weight_kg=payload.member.weight_kg,
+        )
         session.add(m)
         session.commit()
         session.refresh(m)
@@ -468,6 +484,7 @@ def list_results(
                     id=m.id,
                     number=m.number,
                     name=m.name,
+                    birth_date=m.birth_date,
                     memo=m.memo,
                     height_cm=m.height_cm,
                     weight_kg=m.weight_kg,

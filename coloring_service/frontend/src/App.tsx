@@ -15,6 +15,7 @@ type Color = "red" | "blue";
 type MemberInfo = {
   number: string;
   name: string;
+  birth_date?: string | null;
   memo?: string;
   height_cm?: number | null;
   weight_kg?: number | null;
@@ -80,6 +81,7 @@ export default function App() {
   const [member, setMember] = useState<MemberInfo>({ 
     number: "", 
     name: "", 
+    birth_date: "",
     memo: "",
     height_cm: undefined,
     weight_kg: undefined, });
@@ -147,6 +149,7 @@ export default function App() {
       setMember({
         number: data.number ?? "",
         name: data.name ?? name,
+        birth_date: data.birth_date ?? "",
         memo: data.memo ?? "",
         height_cm: data.height_cm ?? null,
         weight_kg: data.weight_kg ?? null,
@@ -176,6 +179,7 @@ export default function App() {
         body: JSON.stringify({
           number,
           name,
+          birth_date: member.birth_date || null,
           memo: member.memo ?? "",
           height_cm: member.height_cm ?? null,
           weight_kg: member.weight_kg ?? null,
@@ -216,6 +220,7 @@ export default function App() {
         member: {
           number,
           name,
+          birth_date: member.birth_date || null,
           memo: member.memo ?? "",
           height_cm: member.height_cm ?? null,
           weight_kg: member.weight_kg ?? null,
@@ -539,6 +544,15 @@ export default function App() {
                   value={member.number}
                   onChange={(e) => setMember({ ...member, number: e.target.value })}
                   placeholder="e.g. 100023"
+                />
+              </label>
+
+              <label>
+                Birth Date
+                <input
+                  type="date"
+                  value={member.birth_date ?? ""}
+                  onChange={(e) => setMember({ ...member, birth_date: e.target.value || ""})}
                 />
               </label>
 

@@ -16,6 +16,7 @@ type Member = {
   id: number;
   number: string;
   name: string;
+  birth_date?: string | null;
   height_cm?: number | null;
   weight_kg?: number | null;
   memo?: string | null;

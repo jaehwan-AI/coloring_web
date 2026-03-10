@@ -10,6 +10,7 @@ class Member(SQLModel, table=True):
 
     number: str = Field(index=True, unique=True)  # ✅ 회원 번호(고유)
     name: str
+    birth_date: Optional[date] = Field(default=None, index=True)
     memo: Optional[str] = None
 
     height_cm: Optional[float] = Field(default=None)
