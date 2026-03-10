@@ -263,16 +263,17 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
 
     items = []
     for r in rows:
-        file_path = UPLOAD_DIR / r.filename
-        if not file_path.exists():
-            print("[MISSING RESULT FILE]", r.id, file_path)
-            continue
+        if not USE_S3:
+            file_path = UPLOAD_DIR / r.filename
+            if not file_path.exists():
+                print("[MISSING RESULT FILE]", r.id, file_path)
+                continue
         
         items.append({
             "id": r.id,
             "selected_date": getattr(r, "selected_date", None),
             "created_at": r.created_at,
-            "url": f"/uploads/{r.filename}",
+            "url": (s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
             "note": r.note,
         })
 
@@ -326,8 +327,6 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
     # 3) save file: uploads/members/<member_id>/colored_<uuid>.png
     filename = f"colored_{uuid.uuid4().hex}.png"
     key = f"members/{m.id}/{filename}"
-    
-    print("[SAVE_COLORED] UPLOAD_DIR =", UPLOAD_DIR)
 
     if USE_S3:
         s3_put_bytes(key, binary, mime)
@@ -335,13 +334,30 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
     else:
         member_dir = UPLOAD_DIR / "members" / str(m.id)
         member_dir.mkdir(parents=True, exist_ok=True)
+        
         path = member_dir / filename
-        path.write_bytes(binary)
-        rel = path.relative_to(UPLOAD_DIR).as_posix()
-        print("[SAVE_COLORED] saved path =", path)
-        print("[SAVE_COLORED] exists after save =", path.exists())
+        written = path.write_bytes(binary)
 
-    print("[SAVE_COLORED] rel =", rel)
+        exists_now = path.exists()
+        size_now = path.stat().st_size if exists_now else 0
+        
+        print("[SAVE_COLORED] UPLOAD_DIR =", UPLOAD_DIR)
+        print("[SAVE_COLORED] member_dir =", member_dir)
+        print("[SAVE_COLORED] saved path =", path)
+        print("[SAVE_COLORED] written =", written)
+        print("[SAVE_COLORED] exists after save =", exists_now)
+        print("[SAVE_COLORED] size after save =", size_now)
+        
+        if written <= 0 or not exists_now or size_now <= 0:
+            try:
+                if path.exists():
+                    path.unlink()
+            except Exception:
+                pass
+            raise HTTPException(status_code=500, detail="Failed to save colored image file.")
+
+        rel = path.relative_to(UPLOAD_DIR).as_posix()
+        print("[SAVE_COLORED] rel =", rel)
 
     # 4) save db row
     r = ColoredResult(
@@ -352,9 +368,20 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
         selected_date=payload.selected_date,
         note=payload.note,
     )
-    session.add(r)
-    session.commit()
-    session.refresh(r)
+    try:
+        session.add(r)
+        session.commit()
+        session.refresh(r)
+    except Exception:
+        session.rollback()
+        if not USE_S3:
+            try:
+                file_path = UPLOAD_DIR / rel
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception:
+                pass
+        raise
 
     # 5) delete original uploaded file (optional)
     if getattr(payload, "original_upload_url", None):
@@ -421,15 +448,16 @@ def list_results(
 
     items: list[ResultItemOut] = []
     for r in rows:
+        if not USE_S3:
+            file_path = UPLOAD_DIR / r.filename
+            if not file_path.exists():
+                print("[MISSING LIST FILE]", r.id, file_path)
+                continue
+
         m = session.get(Member, r.member_id)
         if not m:
             continue
 
-        file_path = UPLOAD_DIR / r.filename
-        if not file_path.exists():
-            print("[MISSING LIST FILE]", r.id, file_path)
-            continue
-            
         items.append(
             ResultItemOut(
                 id=r.id,
@@ -499,7 +527,24 @@ async def upload_image(file: UploadFile = File(...)):
     # (S3 미설정 시) 기존 로컬 저장 fallback
     filename = f"{uuid.uuid4().hex}{ext}"
     path = UPLOAD_DIR / filename
-    path.write_bytes(data)
+
+    written = path.write_bytes(data)
+    exists_now = path.exists()
+    size_now = path.stat().st_size if exists_now else 0
+
+    print("[UPLOAD] path =", path)
+    print("[UPLOAD] written =", written)
+    print("[UPLOAD] exists after save =", exists_now)
+    print("[UPLOAD] size after save =", size_now)
+
+    if written <= 0 or not exists_now or size_now <= 0:
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail="Failed to save uploaded image.")
+
     return {"url": f"/uploads/{filename}"}
 
 
@@ -525,6 +570,24 @@ def get_member_results(
 
     rows = session.exec(stmt).all()
 
+    items = []
+    for r in rows:
+        if not USE_S3:
+            file_path = UPLOAD_DIR / r.filename
+            if not file_path.exists() or not file_path.is_file():
+                print("[MISSING MEMBER FILE]", r.id, file_path)
+                continue
+        
+        items.append(
+            MemberResultsItem(
+                id=r.id,
+                selected_date=r.selected_date,
+                created_at=r.created_at,
+                url=(s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
+                note=r.note,
+            )
+        )
+
     return MemberResultsOut(
         member=MemberOut(
             id=m.id,
@@ -536,16 +599,7 @@ def get_member_results(
             created_at=m.created_at,
             updated_at=m.updated_at,
         ),
-        items=[
-            MemberResultsItem(
-                id=r.id,
-                selected_date=r.selected_date,
-                created_at=r.created_at,
-                url=(s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
-                note=r.note,
-            )
-            for r in rows
-        ],
+        items=items,
     )
 
 
