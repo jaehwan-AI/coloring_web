@@ -62,6 +62,9 @@ export default function App() {
   const originalRef = useRef<ImageData | null>(null);
   const undoRef = useRef<ImageData[]>([]);
 
+  /** 현재 화면에 보이는(색칠 포함) 캔버스 상태 */
+  const workingRef = useRef<ImageData | null>(null);
+
   const bgMaskRef = useRef<Uint8Array | null>(null);
 
   const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("admin");
@@ -251,29 +254,61 @@ export default function App() {
 
   function redrawFromImage() {
     const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img) return;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    if (!canvas) return;
+
+    const prevWorking = workingRef.current;
+    const prevOriginal = imgRef.current;
+
+    if (!prevWorking && !prevOriginal) return;
+
+    const oldW = prevWorking?.width ?? prevOriginal?.width ?? canvas.width;
+    const oldH = prevWorking?.height ?? prevOriginal?.height ?? canvas.height;
+
     sizeCanvasToCssBox();
 
-    const dpr = window.devicePixelRatio || 1;
-    // ✅ Keep whole image + shift up slightly (about 10px)
-    drawImageContainShiftUp(ctx, img, 10 * dpr);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // baseline for Reset and for background estimation
-    originalRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    undoRef.current = [];
+    // 현재 작업 상태 복원
+    if (prevWorking) {
+      const tmp = document.createElement("canvas");
+      tmp.width = oldW;
+      tmp.height = oldH;
+      const tctx = tmp.getContext("2d", { willReadFrequently: true })!;
+      tctx.putImageData(prevWorking, 0, 0);
+
+      ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+      workingRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    }
+
+    // Reset용 원본도 같은 방식으로 크기 맞춰 보관
+    if (prevOriginal) {
+      const tmpOriginal = document.createElement("canvas");
+      tmpOriginal.width = prevOriginal.width;
+      tmpOriginal.height = prevOriginal.height;
+      const octx = tmpOriginal.getContext("2d", { willReadFrequently: true })!;
+      octx.putImageData(prevOriginal, 0, 0);
+
+      const originalCanvas = document.createElement("canvas");
+      originalCanvas.width = canvas.width;
+      originalCanvas.height = canvas.height;
+      const oc = originalCanvas.getContext("2d", { willReadFrequently: true })!;
+      oc.clearRect(0, 0, originalCanvas.width, originalCanvas.height);
+      oc.fillStyle = "#ffffff";
+      oc.fillRect(0, 0, originalCanvas.width, originalCanvas.height);
+      oc.drawImage(tmpOriginal, 0, 0, originalCanvas.width, originalCanvas.height);
+
+      originalRef.current = oc.getImageData(0, 0, originalCanvas.width, originalCanvas.height);
+    }
 
     const est = estimateBackground(ctx, canvas.width, canvas.height);
     setBg(est.bg);
     setBgTol(est.tol);
 
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    bgMaskRef.current = buildBackgroundMask(
-      imgData,
-      est.bg,
-      est.tol
-    );
+    bgMaskRef.current = buildBackgroundMask(imgData, est.bg, est.tol);
   }
 
   // ===== Load & draw image =====
@@ -281,9 +316,9 @@ export default function App() {
     if (!imgUrl) return;
 
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       imgRef.current = img;
-
       const canvas = canvasRef.current!;
       const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 
@@ -304,12 +339,14 @@ export default function App() {
 
       // Reset 기준 저장
       originalRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      workingRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
       undoRef.current = [];
 
       // 배경 추정(예전 방식과 동일한 픽셀 기반)
       const est = estimateBackground(ctx, canvas.width, canvas.height);
       setBg(est.bg);
       setBgTol(est.tol);
+      console.log("estimated bg", est);
 
       // ✅ 이 줄이 없어서 hasMask=false 였음
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -318,9 +355,11 @@ export default function App() {
         est.bg,   // ⚠️ 반드시 est.bg 사용 (state 아님)
         est.tol
       );
+
+      console.log("mask created", !!bgMaskRef.current);
     };
 
-    img.src = imgUrl + `?v=${Date.now()}`;
+    img.src = imgUrl;
   }, [imgUrl]);
 
   // redraw on resize/orientation
@@ -355,12 +394,19 @@ export default function App() {
     if (stack.length > 20) stack.shift();
   }
 
+  function saveWorkingSnapshot(ctx: CanvasRenderingContext2D) {
+    workingRef.current = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  }
+
   function undo() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
     const prev = undoRef.current.pop();
-    if (prev) ctx.putImageData(prev, 0, 0);
+    if (prev) {
+      ctx.putImageData(prev, 0, 0);
+      saveWorkingSnapshot(ctx);
+    }
   }
 
   function reset() {
@@ -370,6 +416,7 @@ export default function App() {
     const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
     undoRef.current = [];
     ctx.putImageData(original, 0, 0);
+    saveWorkingSnapshot(ctx);
   }
 
   function savePng() {
@@ -403,6 +450,7 @@ export default function App() {
 
     pushUndo(ctx);
     floodFillWithBgMask(ctx, x, y, COLORS[selected], mask, 35);
+    saveWorkingSnapshot(ctx);
   }
 
   console.log("APP.TSX LOADED ✅", new Date().toISOString());
@@ -472,7 +520,7 @@ export default function App() {
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Member</h3>
 
               <div className="memberRow">
-                <label style={{ flex: 1, marginBottom: 0 }}>
+                <label style={{ flex: 1, marginBottom: 0, marginBottom: 0 }}>
                   Name
                   <input
                     value={member.name}

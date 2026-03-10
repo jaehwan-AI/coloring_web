@@ -11,6 +11,7 @@ from sqlmodel import select
 from fastapi import FastAPI, UploadFile, File, Response, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -21,6 +22,52 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.hash import bcrypt
 from pydantic import BaseModel
+
+import boto3
+from botocore.config import Config
+
+
+S3_BUCKET = os.getenv("S3_BUCKET")
+AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
+S3_PRESIGN_EXPIRES = int(os.getenv("S3_PRESIGN_EXPIRES", "3600"))
+
+USE_S3 = bool(S3_BUCKET)
+
+_s3 = None
+if USE_S3:
+    _s3 = boto3.client(
+        "s3",
+        region_name=AWS_REGION,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+        ),
+    )
+
+def s3_put_bytes(key: str, data: bytes, content_type: str):
+    if not USE_S3:
+        raise RuntimeError("S3 is not configured")
+    _s3.put_object(
+        Bucket=S3_BUCKET,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+    )
+
+def s3_delete(key: str):
+    if not USE_S3:
+        return
+    _s3.delete_object(Bucket=S3_BUCKET, Key=key)
+
+def s3_presign_get(key: str) -> str:
+    if not USE_S3:
+        raise RuntimeError("S3 is not configured")
+    return _s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": S3_BUCKET, "Key": key},
+        ExpiresIn=S3_PRESIGN_EXPIRES,
+    )
+
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -214,6 +261,22 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
         .order_by(ColoredResult.id.desc())
     ).all()
 
+    items = []
+    for r in rows:
+        if not USE_S3:
+            file_path = UPLOAD_DIR / r.filename
+            if not file_path.exists():
+                print("[MISSING RESULT FILE]", r.id, file_path)
+                continue
+        
+        items.append({
+            "id": r.id,
+            "selected_date": getattr(r, "selected_date", None),
+            "created_at": r.created_at,
+            "url": (s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
+            "note": r.note,
+        })
+
     return {
         "member": {
             "id": m.id,
@@ -225,16 +288,7 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
             "created_at": m.created_at,
             "updated_at": m.updated_at,
         },
-        "items": [
-            {
-                "id": r.id,
-                "selected_date": getattr(r, "selected_date", None),
-                "created_at": r.created_at,
-                "url": f"/uploads/{r.filename}",
-                "note": r.note,
-            }
-            for r in rows
-        ],
+        "items": items,
     }
 
 
@@ -271,14 +325,39 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
         mime = header.split(":")[1].split(";")[0]
 
     # 3) save file: uploads/members/<member_id>/colored_<uuid>.png
-    member_dir = UPLOAD_DIR / "members" / str(m.id)
-    member_dir.mkdir(parents=True, exist_ok=True)
-
     filename = f"colored_{uuid.uuid4().hex}.png"
-    path = member_dir / filename
-    path.write_bytes(binary)
+    key = f"members/{m.id}/{filename}"
 
-    rel = path.relative_to(UPLOAD_DIR).as_posix()
+    if USE_S3:
+        s3_put_bytes(key, binary, mime)
+        rel = key  # DB에는 S3 key 저장
+    else:
+        member_dir = UPLOAD_DIR / "members" / str(m.id)
+        member_dir.mkdir(parents=True, exist_ok=True)
+        
+        path = member_dir / filename
+        written = path.write_bytes(binary)
+
+        exists_now = path.exists()
+        size_now = path.stat().st_size if exists_now else 0
+        
+        print("[SAVE_COLORED] UPLOAD_DIR =", UPLOAD_DIR)
+        print("[SAVE_COLORED] member_dir =", member_dir)
+        print("[SAVE_COLORED] saved path =", path)
+        print("[SAVE_COLORED] written =", written)
+        print("[SAVE_COLORED] exists after save =", exists_now)
+        print("[SAVE_COLORED] size after save =", size_now)
+        
+        if written <= 0 or not exists_now or size_now <= 0:
+            try:
+                if path.exists():
+                    path.unlink()
+            except Exception:
+                pass
+            raise HTTPException(status_code=500, detail="Failed to save colored image file.")
+
+        rel = path.relative_to(UPLOAD_DIR).as_posix()
+        print("[SAVE_COLORED] rel =", rel)
 
     # 4) save db row
     r = ColoredResult(
@@ -289,9 +368,20 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
         selected_date=payload.selected_date,
         note=payload.note,
     )
-    session.add(r)
-    session.commit()
-    session.refresh(r)
+    try:
+        session.add(r)
+        session.commit()
+        session.refresh(r)
+    except Exception:
+        session.rollback()
+        if not USE_S3:
+            try:
+                file_path = UPLOAD_DIR / rel
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception:
+                pass
+        raise
 
     # 5) delete original uploaded file (optional)
     if getattr(payload, "original_upload_url", None):
@@ -300,7 +390,7 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
     return SaveColoredOut(
         id=r.id,
         member_id=m.id,
-        url=f"/uploads/{r.filename}",
+        url=(s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
         created_at=r.created_at,
     )
 
@@ -358,14 +448,21 @@ def list_results(
 
     items: list[ResultItemOut] = []
     for r in rows:
+        if not USE_S3:
+            file_path = UPLOAD_DIR / r.filename
+            if not file_path.exists():
+                print("[MISSING LIST FILE]", r.id, file_path)
+                continue
+
         m = session.get(Member, r.member_id)
         if not m:
             continue
+
         items.append(
             ResultItemOut(
                 id=r.id,
                 created_at=r.created_at,
-                url=f"/uploads/{r.filename}",
+                url=(s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
                 thumb_url=None,
                 member=MemberOut(
                     id=m.id,
@@ -393,12 +490,15 @@ def delete_result(result_id: int, session: Session = Depends(get_session)):
         return Response(status_code=404)
 
     # delete file
-    file_path = UPLOAD_DIR / r.filename
-    try:
-        if file_path.exists():
-            file_path.unlink()
-    except:
-        pass
+    if USE_S3:
+        s3_delete(r.filename)  # r.filename이 S3 key
+    else:
+        file_path = UPLOAD_DIR / r.filename
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except:
+            pass
 
     session.delete(r)
     session.commit()
@@ -416,11 +516,34 @@ async def upload_image(file: UploadFile = File(...)):
         # content_type이 image여도 확장자가 없을 수 있어서 default png로
         ext = ".png"
 
+    data = await file.read()
+
+    if USE_S3:
+        key = f"tmp/{uuid.uuid4().hex}{ext}"
+        s3_put_bytes(key, data, file.content_type or "application/octet-stream")
+        # 프론트는 url만 써도 되게 presigned url을 내려줌
+        return {"url": s3_presign_get(key), "key": key}
+
+    # (S3 미설정 시) 기존 로컬 저장 fallback
     filename = f"{uuid.uuid4().hex}{ext}"
     path = UPLOAD_DIR / filename
 
-    data = await file.read()
-    path.write_bytes(data)
+    written = path.write_bytes(data)
+    exists_now = path.exists()
+    size_now = path.stat().st_size if exists_now else 0
+
+    print("[UPLOAD] path =", path)
+    print("[UPLOAD] written =", written)
+    print("[UPLOAD] exists after save =", exists_now)
+    print("[UPLOAD] size after save =", size_now)
+
+    if written <= 0 or not exists_now or size_now <= 0:
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail="Failed to save uploaded image.")
 
     return {"url": f"/uploads/{filename}"}
 
@@ -447,6 +570,24 @@ def get_member_results(
 
     rows = session.exec(stmt).all()
 
+    items = []
+    for r in rows:
+        if not USE_S3:
+            file_path = UPLOAD_DIR / r.filename
+            if not file_path.exists() or not file_path.is_file():
+                print("[MISSING MEMBER FILE]", r.id, file_path)
+                continue
+        
+        items.append(
+            MemberResultsItem(
+                id=r.id,
+                selected_date=r.selected_date,
+                created_at=r.created_at,
+                url=(s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
+                note=r.note,
+            )
+        )
+
     return MemberResultsOut(
         member=MemberOut(
             id=m.id,
@@ -458,16 +599,7 @@ def get_member_results(
             created_at=m.created_at,
             updated_at=m.updated_at,
         ),
-        items=[
-            MemberResultsItem(
-                id=r.id,
-                selected_date=r.selected_date,
-                created_at=r.created_at,
-                url=f"/uploads/{r.filename}",
-                note=r.note,
-            )
-            for r in rows
-        ],
+        items=items,
     )
 
 
@@ -585,7 +717,8 @@ def update_schedule(
 # 여기서는 backend가 ../frontend/dist 를 직접 서빙하는 형태 예시
 FRONT_DIST = (BASE_DIR.parent / "frontend" / "dist").resolve()
 if FRONT_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(FRONT_DIST), html=True), name="frontend")
+    if not USE_S3:
+        app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
     @app.get("/")
     def index():

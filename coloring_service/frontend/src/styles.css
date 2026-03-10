@@ -15,13 +15,13 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
 /* ===== Color Page (App.tsx 인라인 style 이동) ===== */
 .colorLayout3 {
   display: grid;
-  grid-template-columns: 340px 1fr 320px;
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: 260px 1fr 240px;
+  gap: 16px;
+  align-items: stretch;
 }
 @media (max-width: 1100px) {
   .colorLayout3 {
-    grid-template-columns: 340px 1fr;
+    grid-template-columns: 220px minmax(0, 1fr) 200px;
     grid-template-areas:
       "member canvas"
       "note note";
@@ -45,6 +45,21 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
   gap: 8px;
   align-items: flex-end;
   margin-bottom: 10px;
+}
+
+.memberRow > label{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.memberRow label input{
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.memberRow > .btn{
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .memberPanel label {
@@ -85,11 +100,21 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
   touch-action: none;
 }
 
+.notePanel input,
+.notePanel textarea{
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.notePanel{
+  display: flex;
+  flex-direction: column;
+}
 .noteTextarea{
   width: 100%;
-  min-height: 320px;
+  min-height: 220px;
   resize: vertical;
-  border: 1px solid rgba(0,0,0,0.18);
+  border: 1px solid rgba(0,0,0,0.12);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 14px;

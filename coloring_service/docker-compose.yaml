@@ -10,22 +10,21 @@ services:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
-  app:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: coloring-service
+    container_name: coloring-backend
     env_file:
       - .env
     environment:
       # DB
       DATABASE_URL: postgresql+psycopg://coloring:coloring@db:5432/coloring_db
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend/uploads:/app/backend/uploads
+    
     depends_on:
       - db
+    ports:
+      - "8000:8000"
     restart: unless-stopped
 
 volumes:
