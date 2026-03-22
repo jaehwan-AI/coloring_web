@@ -3,7 +3,7 @@ export type RGB = [number, number, number];
 
 export const COLORS: Record<"red" | "blue", RGBA> = {
   red: [229, 57, 53, 255],
-  blue: [30, 136, 229, 255]
+  blue: [30, 136, 229, 255],
 };
 
 function colorDist(a: RGB, b: RGB) {

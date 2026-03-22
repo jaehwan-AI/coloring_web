@@ -21,7 +21,7 @@ function toApiUrl(url?: string | null) {
   return `${API_BASE}${url}`;
 }
 
-type Color = "red" | "blue";
+type Color = "red" | "blue" | "restore";
 
 type MemberInfo = {
   number: string;
@@ -224,6 +224,7 @@ export default function App() {
   function cancelEditMode() {
     setEditingResultId(null);
     setResultNote("");
+    setImgUrl(null);
   }
 
   async function saveColoredToDB() {
@@ -278,6 +279,9 @@ export default function App() {
   }
 
   function startEditResult(payload: EditingResultPayload) {
+    const baseUrl = toApiUrl(payload.url);
+    const nextUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+
     setEditingResultId(payload.id);
 
     setMember({
@@ -291,10 +295,13 @@ export default function App() {
 
     setSelectedDate(payload.selected_date ?? "");
     setResultNote(payload.note ?? "");
-    
-    setImgUrl(toApiUrl(payload.url));
 
-    // 결과 편집을 위해 Color 페이지로 이동
+    // 같은 URL이어도 강제로 다시 로드되게 함
+    setImgUrl(null);
+    requestAnimationFrame(() => {
+      setImgUrl(nextUrl);
+    });
+
     setPage("color");
   }
   
@@ -509,8 +516,91 @@ export default function App() {
     if (!mask) return;
 
     pushUndo(ctx);
-    floodFillWithBgMask(ctx, x, y, COLORS[selected], mask, 35);
+
+    if (selected === "restore") {
+      restoreAt(ctx, x, y, mask, 35);
+    } else {
+      floodFillWithBgMask(ctx, x, y, COLORS[selected], mask, 35);
+    }
+
     saveWorkingSnapshot(ctx);
+  }
+
+  function restoreAt(
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    startY: number,
+    bgMask: Uint8Array,
+    tolerance = 35
+  ) {
+    const canvas = ctx.canvas;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    const current = ctx.getImageData(0, 0, w, h);
+    const original = originalRef.current;
+    if (!original) return;
+
+    if (
+      startX < 0 || startY < 0 ||
+      startX >= w || startY >= h
+    ) {
+      return;
+    }
+
+    const startIdx = startY * w + startX;
+
+    // 배경은 복원 대상으로 보지 않음
+    if (bgMask[startIdx]) return;
+
+    const data = current.data;
+    const orig = original.data;
+
+    const base = startIdx * 4;
+    const targetR = data[base];
+    const targetG = data[base + 1];
+    const targetB = data[base + 2];
+    const targetA = data[base + 3];
+
+    const visited = new Uint8Array(w * h);
+    const stack: number[] = [startIdx];
+
+    function closeEnough(i: number) {
+      const p = i * 4;
+      return (
+        Math.abs(data[p] - targetR) <= tolerance &&
+        Math.abs(data[p + 1] - targetG) <= tolerance &&
+        Math.abs(data[p + 2] - targetB) <= tolerance &&
+        Math.abs(data[p + 3] - targetA) <= tolerance
+      );
+    }
+
+    while (stack.length) {
+      const idx = stack.pop()!;
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+
+      if (bgMask[idx]) continue;
+      if (!closeEnough(idx)) continue;
+
+      const p = idx * 4;
+
+      // 현재 영역을 원본 픽셀로 복원
+      data[p] = orig[p];
+      data[p + 1] = orig[p + 1];
+      data[p + 2] = orig[p + 2];
+      data[p + 3] = orig[p + 3];
+
+      const x = idx % w;
+      const y = Math.floor(idx / w);
+
+      if (x > 0) stack.push(idx - 1);
+      if (x < w - 1) stack.push(idx + 1);
+      if (y > 0) stack.push(idx - w);
+      if (y < h - 1) stack.push(idx + w);
+    }
+
+    ctx.putImageData(current, 0, 0);
   }
 
   console.log("APP.TSX LOADED ✅", new Date().toISOString());
@@ -551,6 +641,9 @@ export default function App() {
           </button>
           <button className="btn" aria-pressed={selected === "blue"} onClick={() => setSelected("blue")}>
             <span className="sw" style={{ background: "#1e88e5" }} /> Blue
+          </button>
+          <button className="btn" aria-pressed={selected === "restore"} onClick={() => setSelected("restore")}>
+            <span className="sw" style={{ background: "#ffffff", border: "1px solid #ccc" }} /> Restore
           </button>
 
           <button className="btn" onClick={undo} disabled={!hasImage}>

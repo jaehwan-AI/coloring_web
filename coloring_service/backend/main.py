@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import io
 import base64
 import uuid
 from datetime import datetime, date, timedelta
@@ -11,7 +12,7 @@ from sqlmodel import select
 from fastapi import FastAPI, UploadFile, File, Response, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -88,7 +89,12 @@ app = FastAPI(title="Member Management (PostgreSQL)")
 # 개발 중 프론트 dev 서버(vite)에서 호출할 경우
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://43.203.198.166:8000",
+        "http://43.203.198.166:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -285,7 +291,8 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
             "id": r.id,
             "selected_date": getattr(r, "selected_date", None),
             "created_at": r.created_at,
-            "url": (s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
+            # "url": (s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
+            "url": f"/api/results/{r.id}/image",
             "note": r.note,
         })
 
@@ -841,6 +848,23 @@ def update_schedule(
     session.commit()
     session.refresh(row)
     return row
+
+
+@app.get("/api/results/{result_id}/image")
+def get_result_image(result_id: int, session: Session = Depends(get_session)):
+    r = session.get(ColoredResult, result_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    if USE_S3:
+        obj = _s3.get_object(Bucket=S3_BUCKET, Key=r.filename)
+        body = obj["Body"].read()
+        return Response(content=body, media_type=r.mime or "image/png")
+    else:
+        file_path = UPLOAD_DIR / r.filename
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Image file not found")
+        return FileResponse(str(file_path), media_type=r.mime or "image/png")
 
 
 # (선택) 배포 시 frontend 빌드 결과를 백엔드가 서빙하도록 할 때
