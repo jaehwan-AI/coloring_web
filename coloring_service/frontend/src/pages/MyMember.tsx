@@ -111,6 +111,10 @@ export default function MyMember() {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [members, setMembers] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState("");
+
   const [items, setItems] = useState<MemberItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -140,6 +144,28 @@ export default function MyMember() {
       setData(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMembers() {
+    setMembersLoading(true);
+    setMembersError("");
+
+    try {
+      const res = await fetch("/api/members");
+      if (!res.ok) {
+        setMembersError("회원 목록을 불러오지 못했습니다.");
+        setMembers([]);
+        return;
+      }
+
+      const json = (await res.json()) as Member[];
+      setMembers(json);
+    } catch {
+      setMembersError("네트워크 오류");
+      setMembers([]);
+    } finally {
+      setMembersLoading(false);
     }
   }
 
@@ -222,7 +248,9 @@ export default function MyMember() {
   }
 
   useEffect(() => {
-    loadFirstPage();
+    loadMembers();
+    // 필요 없으면 loadFirstPage()는 제거해도 됩니다.
+    // loadFirstPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -261,6 +289,67 @@ export default function MyMember() {
             </div>
           ) : null}
         </aside>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>전체 회원</div>
+
+          {membersLoading ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>불러오는 중...</div>
+          ) : membersError ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>{membersError}</div>
+          ) : members.length === 0 ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>등록된 회원이 없습니다.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="memberTable">
+                <thead>
+                  <tr>
+                    <th>번호</th>
+                    <th>이름</th>
+                    <th>생년월일</th>
+                    <th>키</th>
+                    <th>몸무게</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((m) => (
+                    <tr
+                      key={m.id}
+                      onClick={async () => {
+                        setName(m.name);
+
+                        setLoading(true);
+                        setMsg("");
+                        try {
+                          const res = await fetch(`/api/members/by-name/${encodeURIComponent(m.name)}/results`);
+                          if (!res.ok) {
+                            setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
+                            setData(null);
+                            return;
+                          }
+                          const json = (await res.json()) as ApiResponse;
+                          setData(json);
+                        } catch {
+                          setMsg("네트워크 오류");
+                          setData(null);
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>{m.number}</td>
+                      <td>{m.name}</td>
+                      <td>{m.birth_date ?? "-"}</td>
+                      <td>{m.height_cm ?? "-"}</td>
+                      <td>{m.weight_kg ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {/* RIGHT */}
         <section className="panelCard" style={{ overflow: "auto" }}>

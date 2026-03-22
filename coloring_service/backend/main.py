@@ -248,6 +248,13 @@ def get_member(name: str, session: Session = Depends(get_session)):
         "updated_at": m.updated_at,
     }
 
+@app.get("/api/members", response_model=list[MemberOut])
+def list_members(session: Session = Depends(get_session)):
+    rows = session.exec(
+        select(Member).order_by(Member.updated_at.desc(), Member.id.desc())
+    ).all()
+    return rows
+
 @app.get("/api/members/by-name/{name}/results")
 def get_member_results_by_name(name: str, session: Session = Depends(get_session)):
     # 이름이 중복될 수 있으므로, 가장 최근(updated_at) 멤버를 우선 선택합니다.
