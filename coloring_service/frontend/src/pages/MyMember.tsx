@@ -30,6 +30,25 @@ type ResultItem = {
   note?: string | null;
 };
 
+type EditResultPayload = {
+  id: number;
+  url: string;
+  note?: string | null;
+  selected_date?: string | null;
+  member: {
+    number: string;
+    name: string;
+    birth_date?: string | null;
+    memo?: string | null;
+    height_cm?: number | null;
+    weight_kg?: number | null;
+  };
+};
+
+type Props = {
+  onEditResult: (payload: EditResultPayload) => void;
+};
+
 type ApiResponse = {
   member: Member;
   items: ResultItem[];
@@ -105,7 +124,7 @@ function groupByDate(items: ResultItem[]) {
   return keys.map((k) => ({ date: k, items: map.get(k)! }));
 }
 
-export default function MyMember() {
+export default function MyMember({ onEditResult }: Props) {
   const [name, setName] = useState("");
   const [data, setData] = useState<ApiResponse | null>(null);
   const [msg, setMsg] = useState("");
@@ -405,6 +424,33 @@ export default function MyMember() {
                 {selectedResult.selected_date ?? "No Date"} · Result #{selectedResult.id}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    if (!data || !selectedResult) return;
+
+                    onEditResult({
+                      id: selectedResult.id,
+                      url: selectedResult.url,
+                      note: selectedResult.note ?? "",
+                      selected_date: selectedResult.selected_date ?? "",
+                      member: {
+                        number: data.member.number,
+                        name: data.member.name,
+                        birth_date: data.member.birth_date ?? "",
+                        memo: data.member.memo ?? "",
+                        height_cm: data.member.height_cm ?? null,
+                        weight_kg: data.member.weight_kg ?? null,
+                      },
+                    });
+
+                    setSelectedResult(null);
+                  }}
+                >
+                  Edit
+                </button>
+
                 <a
                   className="btn"
                   href={toApiUrl(selectedResult.url)}
@@ -413,6 +459,7 @@ export default function MyMember() {
                 >
                   Download
                 </a>
+
                 <button className="btn" type="button" onClick={() => setSelectedResult(null)}>
                   Close
                 </button>

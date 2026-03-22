@@ -10,6 +10,17 @@ import AdminLogin from "./pages/AdminLogin";
 import { clearAdminToken, getAdminToken } from "./auth/adminToken";
 
 
+const API_BASE =
+  window.location.hostname === "localhost"
+    ? "http://localhost:8000"
+    : `${window.location.protocol}//${window.location.hostname}:8000`;
+
+function toApiUrl(url?: string | null) {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${API_BASE}${url}`;
+}
+
 type Color = "red" | "blue";
 
 type MemberInfo = {
@@ -19,6 +30,14 @@ type MemberInfo = {
   memo?: string;
   height_cm?: number | null;
   weight_kg?: number | null;
+};
+
+type EditingResultPayload = {
+  id: number;
+  url: string;
+  note?: string | null;
+  selected_date?: string | null;
+  member: MemberInfo;
 };
 
 function drawImageContainShiftUp(
@@ -98,6 +117,8 @@ export default function App() {
   });
 
   const [resultNote, setResultNote] = useState("");
+
+  const [editingResultId, setEditingResultId] = useState<number | null>(null);
 
   const hasImage = !!imgUrl;
 
@@ -200,6 +221,11 @@ export default function App() {
     }
   }
 
+  function cancelEditMode() {
+    setEditingResultId(null);
+    setResultNote("");
+  }
+
   async function saveColoredToDB() {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -213,36 +239,65 @@ export default function App() {
 
     const image_data_url = canvas.toDataURL("image/png");
 
-    const res = await fetch("/api/results/save", {
-      method: "POST",
+    const payload = {
+      member: {
+        number,
+        name,
+        birth_date: member.birth_date || null,
+        memo: member.memo ?? "",
+        height_cm: member.height_cm ?? null,
+        weight_kg: member.weight_kg ?? null,
+      },
+      image_data_url,
+      selected_date: selectedDate || null,
+      original_id: editingResultId,
+      note: resultNote,
+      original_upload_url: editingResultId ? null : imgUrl,
+    };
+
+    const isEditing = editingResultId !== null;
+    const url = isEditing ? `/api/results/${editingResultId}` : "/api/results/save";
+    const method = isEditing ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        member: {
-          number,
-          name,
-          birth_date: member.birth_date || null,
-          memo: member.memo ?? "",
-          height_cm: member.height_cm ?? null,
-          weight_kg: member.weight_kg ?? null,
-        },
-        image_data_url,
-        selected_date: selectedDate, // ✅ 함께 저장
-        original_id: null,
-        note: resultNote,
-        original_upload_url: imgUrl,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      alert(t || "Failed to save colored result.");
+      alert(t || (isEditing ? "Failed to update colored result." : "Failed to save colored result."));
       return;
     }
-    
-    setResultNote("");  // 메모 초기화
-    alert("Saved colored result!");
+
+    setResultNote("");
+    setEditingResultId(null);
+
+    alert(isEditing ? "Updated colored result!" : "Saved colored result!");
   }
 
+  function startEditResult(payload: EditingResultPayload) {
+    setEditingResultId(payload.id);
+
+    setMember({
+      number: payload.member.number ?? "",
+      name: payload.member.name ?? "",
+      birth_date: payload.member.birth_date ?? "",
+      memo: payload.member.memo ?? "",
+      height_cm: payload.member.height_cm ?? null,
+      weight_kg: payload.member.weight_kg ?? null,
+    });
+
+    setSelectedDate(payload.selected_date ?? "");
+    setResultNote(payload.note ?? "");
+    
+    setImgUrl(toApiUrl(payload.url));
+
+    // 결과 편집을 위해 Color 페이지로 이동
+    setPage("color");
+  }
+  
   // ===== Canvas sizing: match CSS box (fixes click mapping & iPad issues) =====
   function sizeCanvasToCssBox() {
     const canvas = canvasRef.current;
@@ -508,13 +563,13 @@ export default function App() {
             💾 Save
           </button> */}
           <button className="btn" onClick={saveColoredToDB}>
-            💾 Save Colored Result
+            {editingResultId !== null ? "💾 Update Colored Result" : "💾 Save Colored Result"}
           </button>
         </>
       }
     >
       {page === "member" ? (
-        <MyMember />
+        <MyMember onEditResult={startEditResult} />
       ) : page === "schedule" ? (
         <SchedulePage />
       ) : (
@@ -523,6 +578,12 @@ export default function App() {
             {/* Left panel: member input/load/save */}
             <section className="panelCard memberPanel">
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Member</h3>
+
+                {editingResultId !== null && (
+                  <div style={{ marginBottom: 10, fontSize: 12, color: "#6b5cff", fontWeight: 700 }}>
+                    Editing Result #{editingResultId}
+                  </div>
+                )}
 
               <div className="memberRow">
                 <label style={{ flex: 1, marginBottom: 0, marginBottom: 0 }}>
@@ -603,6 +664,12 @@ export default function App() {
                 <button className="btn" onClick={saveMemberToDB} disabled={savingMember}>
                   {savingMember ? "Saving..." : "Save Member"}
                 </button>
+
+                {editingResultId !== null && (
+                  <button className="btn" onClick={cancelEditMode} type="button">
+                    Cancel Edit
+                  </button>
+                )}
               </div>
 
               {memberMsg && <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>{memberMsg}</div>}

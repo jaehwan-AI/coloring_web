@@ -417,6 +417,113 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
         created_at=r.created_at,
     )
 
+@app.put("/api/results/{result_id}", response_model=SaveColoredOut)
+def update_colored_result(
+    result_id: int,
+    payload: SaveColoredIn,
+    session: Session = Depends(get_session),
+):
+    r = session.get(ColoredResult, result_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    # 1) member upsert / update
+    m = session.exec(select(Member).where(Member.number == payload.member.number)).first()
+    if m:
+        m.name = payload.member.name
+        m.birth_date = payload.member.birth_date
+        m.memo = payload.member.memo
+        m.height_cm = payload.member.height_cm
+        m.weight_kg = payload.member.weight_kg
+        m.updated_at = datetime.utcnow()
+        session.add(m)
+        session.commit()
+        session.refresh(m)
+    else:
+        m = Member(
+            number=payload.member.number,
+            name=payload.member.name,
+            birth_date=payload.member.birth_date,
+            memo=payload.member.memo,
+            height_cm=payload.member.height_cm,
+            weight_kg=payload.member.weight_kg,
+        )
+        session.add(m)
+        session.commit()
+        session.refresh(m)
+
+    # 2) decode image
+    data_url = payload.image_data_url
+    if not data_url.startswith("data:image"):
+        return Response("Invalid image_data_url", status_code=400)
+
+    header, encoded = data_url.split(",", 1)
+    binary = base64.b64decode(encoded)
+
+    mime = "image/png"
+    if ";base64" in header and ":" in header:
+        mime = header.split(":")[1].split(";")[0]
+
+    old_filename = r.filename
+
+    # 3) save new file
+    filename = f"colored_{uuid.uuid4().hex}.png"
+    key = f"members/{m.id}/{filename}"
+
+    if USE_S3:
+        s3_put_bytes(key, binary, mime)
+        rel = key
+    else:
+        member_dir = UPLOAD_DIR / "members" / str(m.id)
+        member_dir.mkdir(parents=True, exist_ok=True)
+
+        path = member_dir / filename
+        written = path.write_bytes(binary)
+
+        exists_now = path.exists()
+        size_now = path.stat().st_size if exists_now else 0
+
+        if written <= 0 or not exists_now or size_now <= 0:
+            try:
+                if path.exists():
+                    path.unlink()
+            except Exception:
+                pass
+            raise HTTPException(status_code=500, detail="Failed to save updated image file.")
+
+        rel = path.relative_to(UPLOAD_DIR).as_posix()
+
+    # 4) update DB row
+    r.member_id = m.id
+    r.filename = rel
+    r.mime = mime
+    r.selected_date = payload.selected_date
+    r.note = payload.note
+    r.original_id = payload.original_id
+
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+
+    # 5) delete old file
+    if old_filename and old_filename != rel:
+        if USE_S3:
+            s3_delete(old_filename)
+        else:
+            try:
+                old_path = UPLOAD_DIR / old_filename
+                if old_path.exists():
+                    old_path.unlink()
+            except Exception:
+                pass
+
+    return SaveColoredOut(
+        id=r.id,
+        member_id=r.member_id,
+        url=(s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
+        created_at=r.created_at,
+    )
+
 def _safe_unlink_uploaded_url(url: str) -> bool:
     """Delete a file under UPLOAD_DIR given a public /uploads/... URL.
 
