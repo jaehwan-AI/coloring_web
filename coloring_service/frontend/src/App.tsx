@@ -31,6 +31,7 @@ type MemberInfo = {
   memo?: string;
   height_cm?: number | null;
   weight_kg?: number | null;
+  teacher_id?: number | null;
 };
 
 type EditingResultPayload = {
@@ -93,33 +94,65 @@ export default function App() {
     username: string;
     display_name: string;
     role: "admin" | "teacher";
-  }
+  };
+
+  type TeacherOption = {
+    id: number;
+    username: string;
+    display_name: string;
+    role: "admin" | "teacher";
+  };
 
   const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("color");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [teachers, setTeachers] = useState<TeacherOption[]>([]);
 
   useEffect(() => {
-  const token = getAdminToken();
-  if (!token) {
-    setCurrentUser(null);
-    return;
-  }
-
-  fetch("/api/me", {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-    .then((r) => {
-      if (!r.ok) throw new Error();
-      return r.json();
-    })
-    .then((user) => {
-      setCurrentUser(user);
-    })
-    .catch(() => {
-      clearAdminToken();
+    const token = getAdminToken();
+    if (!token) {
       setCurrentUser(null);
-    });
-}, []);
+      return;
+    }
+
+    fetch("/api/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((user) => {
+        setCurrentUser(user);
+      })
+      .catch(() => {
+        clearAdminToken();
+        setCurrentUser(null);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.role !== "admin") {
+      setTeachers([]);
+      return;
+    }
+
+    const token = getAdminToken();
+    if (!token) return;
+
+    fetch("/api/admin/teachers", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((data) => {
+        setTeachers(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        setTeachers([]);
+      });
+  }, [currentUser]);
 
   // ===== Member panel state =====
   const [member, setMember] = useState<MemberInfo>({ 
@@ -128,7 +161,9 @@ export default function App() {
     birth_date: "",
     memo: "",
     height_cm: undefined,
-    weight_kg: undefined, });
+    weight_kg: undefined,
+    teacher_id: null,
+  });
   const [memberMsg, setMemberMsg] = useState<string>("");
   const [loadingMember, setLoadingMember] = useState<boolean>(false);
   const [savingMember, setSavingMember] = useState<boolean>(false);
@@ -171,8 +206,6 @@ export default function App() {
     setLoadingMember(true);
     setMemberMsg("");
     try {
-      const token = getAdminToken();
-
       // 1) Try direct endpoint (if exists)
       const res = await fetch(`/api/members/${encodeURIComponent(name)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -198,12 +231,13 @@ export default function App() {
       }
 
       setMember({
-        number: data.number ?? "",
-        name: data.name ?? name,
-        birth_date: data.birth_date ?? "",
-        memo: data.memo ?? "",
-        height_cm: data.height_cm ?? null,
-        weight_kg: data.weight_kg ?? null,
+        number: memberData.number ?? "",
+        name: memberData.name ?? name,
+        birth_date: memberData.birth_date ?? "",
+        memo: memberData.memo ?? "",
+        height_cm: memberData.height_cm ?? null,
+        weight_kg: memberData.weight_kg ?? null,
+        teacher_id: memberData.teacher_id ?? null,
       });
       setMemberMsg("Loaded.");
     } catch {
@@ -222,11 +256,15 @@ export default function App() {
       setMemberMsg("Number and Name are required.");
       return;
     }
+
+    if (currentUser?.role === "admin" && !member.teacher_id) {
+      setMemberMsg("Teacher ID is required for admin.");
+      return;
+    }
+
     setSavingMember(true);
     setMemberMsg("");
     try {
-      const token = getAdminToken();
-
       const res = await fetch("/api/members/upsert", {
         method: "POST",
         headers: {
@@ -240,12 +278,20 @@ export default function App() {
           memo: member.memo ?? "",
           height_cm: member.height_cm ?? null,
           weight_kg: member.weight_kg ?? null,
+          teacher_id: currentUser?.role === "admin" ? member.teacher_id : undefined,
         }),
       });
 
       if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        setMemberMsg(txt || "Failed to save member.");
+        let msg = "Failed to save member.";
+        try {
+          const err = await res.json();
+          msg = err?.detail || msg;
+        } catch {
+          const txt = await res.text().catch(() => "");
+          if (txt) msg = txt;
+        }
+        setMemberMsg(msg);
         return;
       }
 
@@ -301,7 +347,7 @@ export default function App() {
       method,
       headers: { 
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer $(token)` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(payload),
     });
@@ -807,6 +853,21 @@ export default function App() {
                   placeholder="optional"
                 />
               </label>
+
+              {currentUser?.role === "admin" && (
+                <input
+                  className="textInput"
+                  placeholder="Teacher ID"
+                  type="number"
+                  value={member.teacher_id ?? ""}
+                  onChange={(e) =>
+                    setMember((prev) => ({
+                      ...prev,
+                      teacher_id: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                />
+              )}
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button className="btn" onClick={saveMemberToDB} disabled={savingMember}>

@@ -3,9 +3,6 @@ import "./MyMember.css";
 import { getAdminToken } from "../auth/authToken";
 
 
-const token = getAdminToken();
-const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
-
 const API_BASE = 
   window.location.hostname === "localhost"
     ? "http://localhost:8000"
@@ -98,7 +95,11 @@ async function fetchJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> 
  * - triggers browser download
  */
 async function downloadByFetch(url: string, filename: string) {
-  const res = await fetch(url, { method: "GET" });
+  const token = getAdminToken();
+  const res = await fetch(url, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) throw new Error(`Download failed (${res.status})`);
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
@@ -154,6 +155,7 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
+    const token = getAdminToken();
     const q = name.trim();
     if (!q) {
       setMsg("Member name을 입력하세요.");
@@ -163,7 +165,9 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
     setMsg("");
 
     try {
-      const res = await fetch(`/api/members/by-name/${encodeURIComponent(q)}/results`);
+      const res = await fetch(`/api/members/by-name/${encodeURIComponent(q)}/results`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
       if (!res.ok) {
         setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
@@ -181,11 +185,14 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
   }
 
   async function loadMembers() {
+    const token = getAdminToken();
     setMembersLoading(true);
     setMembersError("");
 
     try {
-      const res = await fetch("/api/members");
+      const res = await fetch("/api/members", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!res.ok) {
         setMembersError("회원 목록을 불러오지 못했습니다.");
         setMembers([]);
@@ -218,10 +225,13 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
   const PAGE_LIMIT = 24;
 
   async function loadFirstPage() {
+    const token = getAdminToken();
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchJson<ResultsResponse>(`/api/results?limit=${PAGE_LIMIT}`);
+      const data = await fetchJson<ResultsResponse>(`/api/results?limit=${PAGE_LIMIT}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       setItems(data.items || []);
       setNextCursor(data.nextCursor ?? null);
     } catch (e: any) {
@@ -232,12 +242,16 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
   }
 
   async function loadMore() {
+    const token = getAdminToken();
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     setError(null);
     try {
       const data = await fetchJson<ResultsResponse>(
-        `/api/results?limit=${PAGE_LIMIT}&cursor=${encodeURIComponent(nextCursor)}`
+        `/api/results?limit=${PAGE_LIMIT}&cursor=${encodeURIComponent(nextCursor)}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }
       );
       setItems((prev) => [...prev, ...(data.items || [])]);
       setNextCursor(data.nextCursor ?? null);
@@ -249,13 +263,17 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
   }
 
   async function deleteItem(id: string) {
+    const token = getAdminToken();s
     // Optimistic UI
     const prev = items;
     setItems((xs) => xs.filter((x) => x.id !== id));
     if (selectedId === id) setSelectedId(null);
 
     try {
-      const res = await fetch(`/api/images/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/images/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Delete failed: ${res.status}`);
@@ -350,12 +368,15 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                     <tr
                       key={m.id}
                       onClick={async () => {
+                        const token = getAdminToken();
                         setName(m.name);
 
                         setLoading(true);
                         setMsg("");
                         try {
-                          const res = await fetch(`/api/members/by-name/${encodeURIComponent(m.name)}/results`);
+                          const res = await fetch(`/api/members/by-name/${encodeURIComponent(m.name)}/results`, {
+                            headers: token ? { Authorization: `Bearer ${token}` } : {},
+                          });
                           if (!res.ok) {
                             setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
                             setData(null);

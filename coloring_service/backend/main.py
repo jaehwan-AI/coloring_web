@@ -303,7 +303,10 @@ def upsert_member(
 ):
     target_teacher_id = payload.teacher_id if user.role == "admin" else user.id
     if target_teacher_id is None:
-        raise HTTPException(status_code=400, detail="teacher_id is required")
+        raise HTTPException(
+            status_code=400,
+            detail="teacher_id is required for admin-created member"
+        )
 
     m = session.exec(select(Member).where(Member.number == payload.number)).first()
 
@@ -768,6 +771,7 @@ def list_results(
     limit: int = 24,
     cursor: Optional[int] = None,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     stmt = select(ColoredResult).order_by(ColoredResult.id.desc()).limit(limit + 1)
     if cursor is not None:
@@ -790,6 +794,8 @@ def list_results(
 
         m = session.get(Member, r.member_id)
         if not m:
+            continue
+        if user.role == "teacher" and m.teacher_id != user.id:
             continue
 
         items.append(
@@ -819,10 +825,19 @@ def list_results(
 # Delete result (DB + file)
 # ---------------------------
 @app.delete("/api/images/{result_id}")
-def delete_result(result_id: int, session: Session = Depends(get_session)):
+def delete_result(
+    result_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     r = session.get(ColoredResult, result_id)
     if not r:
         return Response(status_code=404)
+
+    m = session.get(Member, r.member_id)
+    if not m:
+        return Response(status_code=404)
+    ensure_member_access(user, m)
 
     # delete file
     if USE_S3:
