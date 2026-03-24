@@ -42,7 +42,13 @@ function NavIcon({
   );
 }
 
-export default function AppShell({ page, setPage, colorToolbar, children }: Props) {
+export default function AppShell({
+  page,
+  setPage,
+  currentUser,
+  colorToolbar,
+  children,
+ }: Props) {
   // ✅ 상단바 기준으로 visualViewport 대응
   useViewportVars(".topBar");
 
@@ -132,7 +138,7 @@ export default function AppShell({ page, setPage, colorToolbar, children }: Prop
                     window.location.reload();
                   }}
                 >
-                  로그라웃
+                  로그아웃
                 </button>
               </div>
             </div>

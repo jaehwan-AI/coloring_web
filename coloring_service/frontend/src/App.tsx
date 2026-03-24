@@ -8,6 +8,7 @@ import MyMember from "./pages/MyMember";
 import SchedulePage from "./pages/Schedule";
 import Login from "./pages/Login";
 import { clearAdminToken, getAdminToken } from "./auth/authToken";
+import AdminMembers from "./pages/AdminMembers";
 
 
 const API_BASE =
@@ -161,6 +162,7 @@ export default function App() {
 
   // ===== Member Load (name) =====
   async function loadMemberByName() {
+    const token = getAdminToken();
     const name = member.name.trim();
     if (!name) {
       setMemberMsg("Please enter member number.");
@@ -169,8 +171,12 @@ export default function App() {
     setLoadingMember(true);
     setMemberMsg("");
     try {
+      const token = getAdminToken();
+
       // 1) Try direct endpoint (if exists)
-      const res = await fetch(`/api/members/${encodeURIComponent(name)}`);
+      const res = await fetch(`/api/members/${encodeURIComponent(name)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!res.ok) {
         // 2) Fallback: search endpoint returning list (if exists)
         alert("Member not found.");
@@ -209,6 +215,7 @@ export default function App() {
 
   // ===== Member Save (DB) =====
   async function saveMemberToDB() {
+    const token = getAdminToken();
     const number = member.number.trim();
     const name = member.name.trim();
     if (!number || !name) {
@@ -218,9 +225,14 @@ export default function App() {
     setSavingMember(true);
     setMemberMsg("");
     try {
+      const token = getAdminToken();
+
       const res = await fetch("/api/members/upsert", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           number,
           name,
@@ -252,6 +264,7 @@ export default function App() {
   }
 
   async function saveColoredToDB() {
+    const token = getAdminToken();
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -286,7 +299,10 @@ export default function App() {
 
     const res = await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer $(token)` } : {}),
+      },
       body: JSON.stringify(payload),
     });
 
@@ -696,6 +712,14 @@ export default function App() {
         <MyMember currentUser={currentUser} onEditResult={startEditResult} />
       ) : page === "schedule" ? (
         <SchedulePage />
+      ) : page === "admin" ? (
+        currentUser.role === "admin" ? (
+          <AdminMembers />
+        ) : (
+          <div className="panelCard" style={{ padding: 16 }}>
+            관리자만 접근할 수 있습니다.
+          </div>
+        )
       ) : (
         <>
           <div className="colorLayout3">
@@ -830,7 +854,6 @@ export default function App() {
           </div>
         </>
       )}
-      {/* {page === "admin" && <Login />} */}
     </AppShell>
   );
 }

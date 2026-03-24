@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from db import init_db, get_session
+from db import init_db, get_session, engine
 from models import User, Member, ColoredResult, Schedule
 
 from fastapi.security import OAuth2PasswordBearer
@@ -82,7 +82,7 @@ ACCESS_TOKEN_MINUTES = 60 * 12  # 12 hours
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH", "$2b$12$wZf4tyr7BRJNTT5CUTZR1.v/xOE0Yl2VOR7npN8sJO1eHZKdJ38rm")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/admin/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
 app = FastAPI(title="Member Management (PostgreSQL)")
 
@@ -105,6 +105,45 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # ✅ DB 테이블 생성 (개발용)
 init_db()
+
+def seed_admin_user():
+    with Session(engine) as session:
+        admin = session.exec(
+            select(User).where(User.username == ADMIN_USERNAME)
+        ).first()
+
+        if admin:
+            changed = False
+
+            if admin.role != "admin":
+                admin.role = "admin"
+                changed = True
+
+            if not admin.is_active:
+                admin.is_active = True
+                changed = True
+
+            if ADMIN_PASSWORD_HASH and admin.password_hash != ADMIN_PASSWORD_HASH:
+                admin.password_hash = ADMIN_PASSWORD_HASH
+                changed = True
+
+            if changed:
+                admin.updated_at = datetime.utcnow()
+                session.add(admin)
+                session.commit()
+            return
+
+        admin = User(
+            username=ADMIN_USERNAME,
+            password_hash=ADMIN_PASSWORD_HASH,
+            role="admin",
+            display_name="Administrator",
+            is_active=True,
+        )
+        session.add(admin)
+        session.commit()
+
+seed_admin_user()
 
 
 # ---------------------------
@@ -182,6 +221,7 @@ class UserMeOut(BaseModel):
     username: str
     display_name: str
     role: str
+    is_active: bool = True
 
 class TokenOut(BaseModel):
     access_token: str
@@ -207,6 +247,14 @@ class TeacherCreateIn(BaseModel):
     username: str
     password: str
     display_name: str
+
+class TeacherUpdateIn(BaseModel):
+    username: str
+    display_name: str
+    is_active: bool = True
+
+class TeacherPasswordResetIn(BaseModel):
+    password: str
 
 class MemberTeacherAssignIn(BaseModel):
     teacher_id: int
@@ -922,6 +970,7 @@ def login(body: LoginIn, session: Session = Depends(get_session)):
             username=user.username,
             display_name=user.display_name,
             role=user.role,
+            is_active=user.is_active,
         ),
     )
 
@@ -932,6 +981,7 @@ def me(user: User = Depends(get_current_user)):
         username=user.username,
         display_name=user.display_name,
         role=user.role,
+        is_active=user.is_active,
     )
 
 @app.get("/api/admin/ping")
@@ -944,7 +994,9 @@ def list_teachers(
     _: User = Depends(require_admin),
 ):
     rows = session.exec(
-        select(User).where(User.role == "teacher").order_by(User.display_name.asc())
+        select(User)
+        .where(User.role == "teacher")
+        .order_by(User.display_name.asc(), User.id.asc())
     ).all()
 
     return [
@@ -953,6 +1005,7 @@ def list_teachers(
             username=u.username,
             display_name=u.display_name,
             role=u.role,
+            is_active=u.is_active,
         )
         for u in rows
     ]
@@ -963,15 +1016,23 @@ def create_teacher(
     session: Session = Depends(get_session),
     _: User = Depends(require_admin),
 ):
+    if not payload.username.strip():
+        raise HTTPException(status_code=400, detail="Username is required")
+    if not payload.display_name.strip():
+        raise HTTPException(status_code=400, detail="Display name is required")
+    if not payload.password.strip():
+        raise HTTPException(status_code=400, detail="Password is required")
+
     exists = session.exec(select(User).where(User.username == payload.username)).first()
     if exists:
         raise HTTPException(status_code=400, detail="Username already exists")
 
     row = User(
-        username=payload.username,
+        username=payload.username.strip(),
         password_hash=bcrypt.hash(payload.password),
         role="teacher",
-        display_name=payload.display_name,
+        display_name=payload.display_name.strip(),
+        is_active=True,
     )
     session.add(row)
     session.commit()
@@ -982,6 +1043,7 @@ def create_teacher(
         username=row.username,
         display_name=row.display_name,
         role=row.role,
+        is_active=row.is_active,
     )
 
 @app.put("/api/admin/members/{member_id}/teacher", response_model=MemberOut)
@@ -1018,6 +1080,93 @@ def assign_member_teacher(
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
+
+@app.put("/api/admin/teachers/{teacher_id}", response_model=UserMeOut)
+def update_teacher(
+    teacher_id: int,
+    payload: TeacherUpdateIn,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+):
+    row = session.get(User, teacher_id)
+    if not row or row.role != "teacher":
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    username = payload.username.strip()
+    display_name = payload.display_name.strip()
+
+    if not username:
+        raise HTTPException(status_code=400, detail="Username is required")
+    if not display_name:
+        raise HTTPException(status_code=400, detail="Display name is required")
+
+    dup = session.exec(
+        select(User).where(User.username == username, User.id != teacher_id)
+    ).first()
+    if dup:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    row.username = username
+    row.display_name = display_name
+    row.is_active = payload.is_active
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+
+    return UserMeOut(
+        id=row.id,
+        username=row.username,
+        display_name=row.display_name,
+        role=row.role,
+        is_active=row.is_active,
+    )
+
+@app.put("/api/admin/teachers/{teacher_id}/password")
+def reset_teacher_password(
+    teacher_id: int,
+    payload: TeacherPasswordResetIn,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+):
+    row = session.get(User, teacher_id)
+    if not row or row.role != "teacher":
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    password = payload.password.strip()
+    if not password:
+        raise HTTPException(status_code=400, detail="Password is required")
+
+    row.password_hash = bcrypt.hash(password)
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+
+    return {"ok": True}
+
+@app.delete("/api/admin/teachers/{teacher_id}")
+def delete_teacher(
+    teacher_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+):
+    row = session.get(User, teacher_id)
+    if not row or row.role != "teacher":
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    assigned_members = session.exec(
+        select(Member).where(Member.teacher_id == teacher_id)
+    ).all()
+    if assigned_members:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete teacher with assigned members",
+        )
+
+    session.delete(row)
+    session.commit()
+    return {"ok": True}
+
 
 # ---------------------------
 # Schedule API
