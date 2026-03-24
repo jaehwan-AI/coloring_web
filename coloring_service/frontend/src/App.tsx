@@ -6,8 +6,8 @@ import { COLORS,
 import AppShell from "./layout/AppShell";
 import MyMember from "./pages/MyMember";
 import SchedulePage from "./pages/Schedule";
-import AdminLogin from "./pages/AdminLogin";
-import { clearAdminToken, getAdminToken } from "./auth/adminToken";
+import Login from "./pages/Login";
+import { clearAdminToken, getAdminToken } from "./auth/authToken";
 
 
 const API_BASE =
@@ -87,14 +87,38 @@ export default function App() {
 
   const bgMaskRef = useRef<Uint8Array | null>(null);
 
-  const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("admin");
-  const [adminAuthed, setAdminAuthed] = useState(false);
+  type AuthUser = {
+    id: number;
+    username: string;
+    display_name: string;
+    role: "admin" | "teacher";
+  }
+
+  const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("color");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    clearAdminToken();
-    setAdminAuthed(false);
-    setPage("admin");
-  }, []);
+  const token = getAdminToken();
+  if (!token) {
+    setCurrentUser(null);
+    return;
+  }
+
+  fetch("/api/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+    .then((r) => {
+      if (!r.ok) throw new Error();
+      return r.json();
+    })
+    .then((user) => {
+      setCurrentUser(user);
+    })
+    .catch(() => {
+      clearAdminToken();
+      setCurrentUser(null);
+    });
+}, []);
 
   // ===== Member panel state =====
   const [member, setMember] = useState<MemberInfo>({ 
@@ -538,8 +562,8 @@ export default function App() {
     const h = canvas.height;
 
     const current = ctx.getImageData(0, 0, w, h);
-    const original = originalRef.current;
-    if (!original) return;
+    // const original = originalRef.current;
+    // if (!original) return;
 
     if (
       startX < 0 || startY < 0 ||
@@ -554,13 +578,19 @@ export default function App() {
     if (bgMask[startIdx]) return;
 
     const data = current.data;
-    const orig = original.data;
+    // const orig = original.data;
 
     const base = startIdx * 4;
     const targetR = data[base];
     const targetG = data[base + 1];
     const targetB = data[base + 2];
     const targetA = data[base + 3];
+
+    // 빨강/파랑 색칠 영역만 지우기
+    const isColoredArea = 
+      (targetR > 150 && targetR > targetG + 40 && targetR > targetB + 40) ||  // red-ish
+      (targetB > 150 && targetB > targetR + 40 && targetB > targetG + 20);    // blue-ish
+    if (!isColoredArea) return;
 
     const visited = new Uint8Array(w * h);
     const stack: number[] = [startIdx];
@@ -586,10 +616,10 @@ export default function App() {
       const p = idx * 4;
 
       // 현재 영역을 원본 픽셀로 복원
-      data[p] = orig[p];
-      data[p + 1] = orig[p + 1];
-      data[p + 2] = orig[p + 2];
-      data[p + 3] = orig[p + 3];
+      data[p] = 255;
+      data[p + 1] = 255;
+      data[p + 2] = 255;
+      data[p + 3] = 255;
 
       const x = idx % w;
       const y = Math.floor(idx / w);
@@ -605,12 +635,12 @@ export default function App() {
 
   console.log("APP.TSX LOADED ✅", new Date().toISOString());
 
-  if (!adminAuthed) {
+  if (!currentUser) {
     return (
-      <AdminLogin
-        onSuccess={() => {
-          setAdminAuthed(true);
-          setPage("color");  // 로그인 성공 후 이동
+      <Login
+        onSuccess={(user) => {
+          setCurrentUser(user);
+          setPage("color");
         }}
       />
     );
@@ -620,6 +650,7 @@ export default function App() {
     <AppShell
       page={page}
       setPage={setPage}
+      currentUser={currentUser}
       // keep existing top buttons (red/blue/undo/reset/save)
       colorToolbar={
         <>
@@ -662,7 +693,7 @@ export default function App() {
       }
     >
       {page === "member" ? (
-        <MyMember onEditResult={startEditResult} />
+        <MyMember currentUser={currentUser} onEditResult={startEditResult} />
       ) : page === "schedule" ? (
         <SchedulePage />
       ) : (
@@ -679,7 +710,7 @@ export default function App() {
                 )}
 
               <div className="memberRow">
-                <label style={{ flex: 1, marginBottom: 0, marginBottom: 0 }}>
+                <label style={{ flex: 1, marginBottom: 0 }}>
                   Name
                   <input
                     value={member.name}
@@ -799,7 +830,7 @@ export default function App() {
           </div>
         </>
       )}
-      {page === "admin" && <AdminLogin />}
+      {/* {page === "admin" && <Login />} */}
     </AppShell>
   );
 }

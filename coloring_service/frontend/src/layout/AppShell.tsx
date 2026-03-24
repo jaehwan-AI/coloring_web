@@ -7,6 +7,12 @@ export type PageType = "color" | "member" | "schedule" | "admin";
 type Props = {
   page: PageType;
   setPage: (p: PageType) => void;
+  currentUser: {
+    id: number;
+    username: string;
+    display_name: string;
+    role: "admin" | "teacher";
+  };
   colorToolbar?: React.ReactNode;
   children: React.ReactNode;
 };
@@ -64,9 +70,11 @@ export default function AppShell({ page, setPage, colorToolbar, children }: Prop
           </div>
 
           <div className="railBottom">
-            <NavIcon active={page === "admin"} label="Admin" onClick={() => setPage("admin")}>
-              ⚙️
-            </NavIcon>
+            {currentUser.role === "admin" ? (
+              <NavIcon active={page === "admin"} label="Admin" onClick={() => setPage("admin")}>
+                ⚙️
+              </NavIcon>
+            ) : null}
           </div>
         </aside>
 
@@ -89,6 +97,44 @@ export default function AppShell({ page, setPage, colorToolbar, children }: Prop
             {/* Color 페이지 툴바는 업로드 UI처럼 상단 우측에 “pill 버튼”으로 */}
             <div className="topBarRight">
               {page === "color" && colorToolbar ? <div className="toolbarPills">{colorToolbar}</div> : null}
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginLeft: 12,
+                }}
+              >
+                <span style={{ fontSize: 13, color: "#555" }}>
+                  {currentUser.display_name}
+                </span>
+
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: "2px 6px",
+                    borderRadius: 6,
+                    background:
+                      currentUser.role === "admin" ? "#ffe0e0" : "#e0f0ff",
+                    color:
+                      currentUser.role === "admin" ? "#b71c1c" : "#0d47a1",
+                    fontWeight: 600,
+                  }}
+                >
+                  {currentUser.role}
+                </span>
+
+                <button
+                  className="btn"
+                  onClick={() => {
+                    localStorage.removeItem("admin_token");
+                    window.location.reload();
+                  }}
+                >
+                  로그라웃
+                </button>
+              </div>
             </div>
           </header>
 

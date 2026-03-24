@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./MyMember.css";
+import { getAdminToken } from "../auth/authToken";
+
+
+const token = getAdminToken();
+const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
 const API_BASE = 
   window.location.hostname === "localhost"
@@ -17,9 +22,12 @@ type Member = {
   number: string;
   name: string;
   birth_date?: string | null;
+  memo?: string | null;
   height_cm?: number | null;
   weight_kg?: number | null;
-  memo?: string | null;
+
+  teacher_id?: number | null;
+  teacher_name?: string | null;
 }
 
 type ResultItem = {
@@ -46,6 +54,12 @@ type EditResultPayload = {
 };
 
 type Props = {
+  currentUser: {
+    id: number;
+    username: string;
+    display_name: string;
+    role: "admin" | "teacher";
+  };
   onEditResult: (payload: EditResultPayload) => void;
 };
 
@@ -124,7 +138,7 @@ function groupByDate(items: ResultItem[]) {
   return keys.map((k) => ({ date: k, items: map.get(k)! }));
 }
 
-export default function MyMember({ onEditResult }: Props) {
+export default function MyMember({ currentUser, onEditResult }: Props) {
   const [name, setName] = useState("");
   const [data, setData] = useState<ApiResponse | null>(null);
   const [msg, setMsg] = useState("");
@@ -328,6 +342,7 @@ export default function MyMember({ onEditResult }: Props) {
                     <th>생년월일</th>
                     <th>키</th>
                     <th>몸무게</th>
+                    {currentUser.role === "admin" ? <th>담당 선생님</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -362,6 +377,7 @@ export default function MyMember({ onEditResult }: Props) {
                       <td>{m.birth_date ?? "-"}</td>
                       <td>{m.height_cm ?? "-"}</td>
                       <td>{m.weight_kg ?? "-"}</td>
+                      {currentUser.role === "admin" ? <td>{m.teacher_name ?? "-"}</td> : null}
                     </tr>
                   ))}
                 </tbody>

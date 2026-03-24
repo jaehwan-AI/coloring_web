@@ -1,8 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, date
 from typing import Optional
+from datetime import datetime, date
 from sqlmodel import SQLModel, Field
+
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    password_hash: str
+    role: str = Field(index=True)  # "admin" | "teacher"
+    display_name: str
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Member(SQLModel, table=True):
@@ -15,6 +26,8 @@ class Member(SQLModel, table=True):
 
     height_cm: Optional[float] = Field(default=None)
     weight_kg: Optional[float] = Field(default=None)
+
+    teacher_id: int = Field(foreign_key="user.id", index=True)
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

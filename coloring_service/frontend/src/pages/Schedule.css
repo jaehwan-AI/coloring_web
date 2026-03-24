@@ -47,3 +47,11 @@
   margin-top: 12px;
   width: 100%;
 }
+
+.schedule-selected-day{
+  background: rgba(111, 99, 247, 0.14) !important;
+}
+
+.schedule-selected-day .rbc-button-link{
+  font-weight: 800;
+}

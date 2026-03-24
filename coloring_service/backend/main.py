@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from db import init_db, get_session
-from models import Member, ColoredResult, Schedule
+from models import User, Member, ColoredResult, Schedule
 
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -119,6 +119,8 @@ class MemberUpsertIn(BaseModel):
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
 
+    teacher_id: Optional[int] = None
+
 class MemberOut(BaseModel):
     id: int
     number: str
@@ -128,6 +130,9 @@ class MemberOut(BaseModel):
 
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
+
+    teacher_id: Optional[int] = None
+    teacher_name: Optional[str] = None
 
     created_at: datetime
     updated_at: datetime
@@ -168,13 +173,20 @@ class MemberResultsOut(BaseModel):
     member: MemberOut
     items: List[MemberResultsItem]
 
-class AdminLoginIn(BaseModel):
+class LoginIn(BaseModel):
     username: str
     password: str
+
+class UserMeOut(BaseModel):
+    id: int
+    username: str
+    display_name: str
+    role: str
 
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    user: UserMeOut
 
 class ScheduleCreateIn(BaseModel):
     title: str
@@ -191,57 +203,117 @@ class ScheduleOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-def create_access_token(subject: str) -> str:
+class TeacherCreateIn(BaseModel):
+    username: str
+    password: str
+    display_name: str
+
+class MemberTeacherAssignIn(BaseModel):
+    teacher_id: int
+
+def create_access_token(user: User) -> str:
     exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_MINUTES)
-    payload = {"sub": subject, "exp": exp, "role": "admin"}
+    payload = {
+        "sub": user.username,
+        "user_id": user.id,
+        "role": user.role,
+        "exp": exp,
+    }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
-def require_admin(token: str = Depends(oauth2_scheme)) -> str:
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    session: Session = Depends(get_session),
+) -> User:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
-        if payload.get("role") != "admin":
-            raise HTTPException(status_code=403, detail="Not an admin")
-        return payload.get("sub", "")
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        user = session.get(User, user_id)
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        return user
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not an admin")
+    return user
 
 # ---------------------------
 # Member API
 # ---------------------------
 @app.post("/api/members/upsert", response_model=MemberOut)
-def upsert_member(payload: MemberUpsertIn, session: Session = Depends(get_session)):
+def upsert_member(
+    payload: MemberUpsertIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    target_teacher_id = payload.teacher_id if user.role == "admin" else user.id
+    if target_teacher_id is None:
+        raise HTTPException(status_code=400, detail="teacher_id is required")
+
     m = session.exec(select(Member).where(Member.number == payload.number)).first()
 
     if m:
+        if user.role == "teacher" and m.teacher_id != user.id:
+            raise HTTPException(status_code=403, detail="Cannot edit another teacher's member")
+
         m.name = payload.name
         m.birth_date = payload.birth_date
         m.memo = payload.memo
         m.height_cm = payload.height_cm
         m.weight_kg = payload.weight_kg
+        m.teacher_id = target_teacher_id
         m.updated_at = datetime.utcnow()
-        session.add(m)
-        session.commit()
-        session.refresh(m)
-        return m
-
-    m = Member(
-        number=payload.number, 
-        name=payload.name,
-        birth_date=payload.birth_date,
-        memo=payload.memo,
-        height_cm=payload.height_cm,
-        weight_kg=payload.weight_kg
+    else:
+        m = Member(
+            number=payload.number,
+            name=payload.name,
+            birth_date=payload.birth_date,
+            memo=payload.memo,
+            height_cm=payload.height_cm,
+            weight_kg=payload.weight_kg,
+            teacher_id=target_teacher_id,
         )
+
     session.add(m)
     session.commit()
     session.refresh(m)
-    return m
+
+    teacher = session.get(User, m.teacher_id)
+
+    return MemberOut(
+        id=m.id,
+        number=m.number,
+        name=m.name,
+        birth_date=m.birth_date,
+        memo=m.memo,
+        height_cm=m.height_cm,
+        weight_kg=m.weight_kg,
+        teacher_id=m.teacher_id,
+        teacher_name=teacher.display_name if teacher else None,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
 
 @app.get("/api/members/{name}")
-def get_member(name: str, session: Session = Depends(get_session)):
-    m = session.exec(select(Member).where(Member.name == name)).first()
+def get_member(
+    name: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    stmt = scoped_member_query(user).where(Member.name == name)
+    m = session.exec(stmt).first()
     if not m:
         return Response(status_code=404)
+
+    teacher = session.get(User, m.teacher_id)
+
     return {
         "id": m.id,
         "number": m.number,
@@ -250,22 +322,48 @@ def get_member(name: str, session: Session = Depends(get_session)):
         "memo": m.memo,
         "height_cm": m.height_cm,
         "weight_kg": m.weight_kg,
+        "teacher_id": m.teacher_id,
+        "teacher_name": teacher.display_name if teacher else None,
         "created_at": m.created_at,
         "updated_at": m.updated_at,
     }
 
 @app.get("/api/members", response_model=list[MemberOut])
-def list_members(session: Session = Depends(get_session)):
-    rows = session.exec(
-        select(Member).order_by(Member.updated_at.desc(), Member.id.desc())
-    ).all()
-    return rows
+def list_members(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    stmt = scoped_member_query(user).order_by(Member.updated_at.desc(), Member.id.desc())
+    rows = session.exec(stmt).all()
+
+    result = []
+    for m in rows:
+        teacher = session.get(User, m.teacher_id)
+        result.append(
+            MemberOut(
+                id=m.id,
+                number=m.number,
+                name=m.name,
+                birth_date=m.birth_date,
+                memo=m.memo,
+                height_cm=m.height_cm,
+                weight_kg=m.weight_kg,
+                teacher_id=m.teacher_id,
+                teacher_name=teacher.display_name if teacher else None,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
+            )
+        )
+    return result
 
 @app.get("/api/members/by-name/{name}/results")
-def get_member_results_by_name(name: str, session: Session = Depends(get_session)):
-    # 이름이 중복될 수 있으므로, 가장 최근(updated_at) 멤버를 우선 선택합니다.
+def get_member_results_by_name(
+    name: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     stmt = (
-        select(Member)
+        scoped_member_query(user)
         .where(Member.name == name)
         .order_by(Member.updated_at.desc(), Member.id.desc())
     )
@@ -279,19 +377,14 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
         .order_by(ColoredResult.id.desc())
     ).all()
 
+    teacher = session.get(User, m.teacher_id)
+
     items = []
     for r in rows:
-        if not USE_S3:
-            file_path = UPLOAD_DIR / r.filename
-            if not file_path.exists():
-                print("[MISSING RESULT FILE]", r.id, file_path)
-                continue
-        
         items.append({
             "id": r.id,
             "selected_date": getattr(r, "selected_date", None),
             "created_at": r.created_at,
-            # "url": (s3_presign_get(r.filename) if USE_S3 else f"/uploads/{r.filename}"),
             "url": f"/api/results/{r.id}/image",
             "note": r.note,
         })
@@ -302,34 +395,68 @@ def get_member_results_by_name(name: str, session: Session = Depends(get_session
             "number": m.number,
             "name": m.name,
             "birth_date": m.birth_date,
-            "height_cm": getattr(m, "height_cm", None),
-            "weight_kg": getattr(m, "weight_kg", None),
+            "height_cm": m.height_cm,
+            "weight_kg": m.weight_kg,
             "memo": m.memo,
+            "teacher_id": m.teacher_id,
+            "teacher_name": teacher.display_name if teacher else None,
             "created_at": m.created_at,
             "updated_at": m.updated_at,
         },
         "items": items,
     }
 
+def scoped_member_query(user: User):
+    stmt = select(Member)
+    if user.role == "teacher":
+        stmt = stmt.where(Member.teacher_id == user.id)
+    return stmt
+
+def ensure_member_access(user: User, member: Member):
+    if user.role == "admin":
+        return
+
+    if user.role == "teacher" and member.teacher_id == user.id:
+        return
+
+    raise HTTPException(status_code=403, detail="Forbidden member access")
 
 # ---------------------------
 # Save colored image (with member link)
 # ---------------------------
 @app.post("/api/results/save", response_model=SaveColoredOut)
-def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)):
-    # 1) member upsert by number
+def save_colored(
+    payload: SaveColoredIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    # 1) member upsert by number + 권한 체크
     m = session.exec(select(Member).where(Member.number == payload.member.number)).first()
+
     if m:
+        # 기존 회원이면 접근 권한 검사
+        ensure_member_access(user, m)
+
         m.name = payload.member.name
         m.birth_date = payload.member.birth_date
         m.memo = payload.member.memo
         m.height_cm = payload.member.height_cm
         m.weight_kg = payload.member.weight_kg
         m.updated_at = datetime.utcnow()
+
         session.add(m)
         session.commit()
         session.refresh(m)
+
     else:
+        # 새 회원 생성
+        if user.role == "teacher":
+            teacher_id = user.id
+        else:
+            teacher_id = payload.member.teacher_id
+            if teacher_id is None:
+                raise HTTPException(status_code=400, detail="teacher_id is required for admin-created member")
+
         m = Member(
             number=payload.member.number,
             name=payload.member.name,
@@ -337,6 +464,7 @@ def save_colored(payload: SaveColoredIn, session: Session = Depends(get_session)
             memo=payload.member.memo,
             height_cm=payload.member.height_cm,
             weight_kg=payload.member.weight_kg,
+            teacher_id=teacher_id,
         )
         session.add(m)
         session.commit()
@@ -429,24 +557,44 @@ def update_colored_result(
     result_id: int,
     payload: SaveColoredIn,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     r = session.get(ColoredResult, result_id)
     if not r:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    # 1) member upsert / update
+    current_member = session.get(Member, r.member_id)
+    if not current_member:
+        raise HTTPException(status_code=404, detail="Original member not found")
+
+    ensure_member_access(user, current_member)
+
+    # 1) member upsert / update + 권한 체크
     m = session.exec(select(Member).where(Member.number == payload.member.number)).first()
+
     if m:
+        # 바꾸려는 대상 회원도 접근 가능한지 검사
+        ensure_member_access(user, m)
+
         m.name = payload.member.name
         m.birth_date = payload.member.birth_date
         m.memo = payload.member.memo
         m.height_cm = payload.member.height_cm
         m.weight_kg = payload.member.weight_kg
         m.updated_at = datetime.utcnow()
+
         session.add(m)
         session.commit()
         session.refresh(m)
+
     else:
+        if user.role == "teacher":
+            teacher_id = user.id
+        else:
+            teacher_id = payload.member.teacher_id
+            if teacher_id is None:
+                raise HTTPException(status_code=400, detail="teacher_id is required for admin-created member")
+
         m = Member(
             number=payload.member.number,
             name=payload.member.name,
@@ -454,6 +602,7 @@ def update_colored_result(
             memo=payload.member.memo,
             height_cm=payload.member.height_cm,
             weight_kg=payload.member.weight_kg,
+            teacher_id=teacher_id,
         )
         session.add(m)
         session.commit()
@@ -692,11 +841,17 @@ def get_member_results(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
+    # 1) 회원 조회
     m = session.exec(select(Member).where(Member.number == number)).first()
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
 
+    # 2) 현재 로그인 사용자가 이 회원을 볼 수 있는지 검사
+    ensure_member_access(user, m)
+
+    # 3) 결과 목록 조회
     stmt = select(ColoredResult).where(ColoredResult.member_id == m.id)
 
     if date_from is not None:
@@ -704,7 +859,10 @@ def get_member_results(
     if date_to is not None:
         stmt = stmt.where(ColoredResult.selected_date <= date_to)
 
-    stmt = stmt.order_by(ColoredResult.selected_date.desc().nullslast(), ColoredResult.id.desc())
+    stmt = stmt.order_by(
+        ColoredResult.selected_date.desc().nullslast(),
+        ColoredResult.id.desc(),
+    )
 
     rows = session.exec(stmt).all()
 
@@ -715,7 +873,7 @@ def get_member_results(
             if not file_path.exists() or not file_path.is_file():
                 print("[MISSING MEMBER FILE]", r.id, file_path)
                 continue
-        
+
         items.append(
             MemberResultsItem(
                 id=r.id,
@@ -731,9 +889,11 @@ def get_member_results(
             id=m.id,
             number=m.number,
             name=m.name,
+            birth_date=m.birth_date,
             memo=m.memo,
             height_cm=m.height_cm,
             weight_kg=m.weight_kg,
+            teacher_id=getattr(m, "teacher_id", None),
             created_at=m.created_at,
             updated_at=m.updated_at,
         ),
@@ -744,24 +904,120 @@ def get_member_results(
 # ---------------------------
 # Admin login API
 # ---------------------------
-@app.post("/api/admin/login", response_model=TokenOut)
-def admin_login(body: AdminLoginIn):
-    if body.username != ADMIN_USERNAME:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not ADMIN_PASSWORD_HASH:
-        raise HTTPException(status_code=500, detail="Admin password not configured")
-
-    if not bcrypt.verify(body.password, ADMIN_PASSWORD_HASH):
+@app.post("/api/login", response_model=TokenOut)
+def login(body: LoginIn, session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.username == body.username)).first()
+    if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token(subject=body.username)
-    return TokenOut(access_token=token)
+    if not bcrypt.verify(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    token = create_access_token(user)
+
+    return TokenOut(
+        access_token=token,
+        user=UserMeOut(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            role=user.role,
+        ),
+    )
+
+@app.get("/api/me", response_model=UserMeOut)
+def me(user: User = Depends(get_current_user)):
+    return UserMeOut(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        role=user.role,
+    )
 
 @app.get("/api/admin/ping")
 def admin_ping(_admin: str = Depends(require_admin)):
     return {"ok": True}
 
+@app.get("/api/admin/teachers", response_model=list[UserMeOut])
+def list_teachers(
+    session: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+):
+    rows = session.exec(
+        select(User).where(User.role == "teacher").order_by(User.display_name.asc())
+    ).all()
+
+    return [
+        UserMeOut(
+            id=u.id,
+            username=u.username,
+            display_name=u.display_name,
+            role=u.role,
+        )
+        for u in rows
+    ]
+
+@app.post("/api/admin/teachers", response_model=UserMeOut)
+def create_teacher(
+    payload: TeacherCreateIn,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+):
+    exists = session.exec(select(User).where(User.username == payload.username)).first()
+    if exists:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    row = User(
+        username=payload.username,
+        password_hash=bcrypt.hash(payload.password),
+        role="teacher",
+        display_name=payload.display_name,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+
+    return UserMeOut(
+        id=row.id,
+        username=row.username,
+        display_name=row.display_name,
+        role=row.role,
+    )
+
+@app.put("/api/admin/members/{member_id}/teacher", response_model=MemberOut)
+def assign_member_teacher(
+    member_id: int,
+    payload: MemberTeacherAssignIn,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_admin),
+):
+    m = session.get(Member, member_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    teacher = session.get(User, payload.teacher_id)
+    if not teacher or teacher.role != "teacher":
+        raise HTTPException(status_code=400, detail="Teacher not found")
+
+    m.teacher_id = teacher.id
+    m.updated_at = datetime.utcnow()
+    session.add(m)
+    session.commit()
+    session.refresh(m)
+
+    return MemberOut(
+        id=m.id,
+        number=m.number,
+        name=m.name,
+        birth_date=m.birth_date,
+        memo=m.memo,
+        height_cm=m.height_cm,
+        weight_kg=m.weight_kg,
+        teacher_id=m.teacher_id,
+        teacher_name=teacher.display_name,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
 
 # ---------------------------
 # Schedule API
