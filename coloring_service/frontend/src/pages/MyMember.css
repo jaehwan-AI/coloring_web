@@ -113,3 +113,30 @@
   min-height: 140px;
   background: #fff;
 }
+
+.memberTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.memberTable th,
+.memberTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.memberTable th {
+  background: rgba(250,250,255,0.9);
+  font-weight: 800;
+}
+
+.memberTable tbody tr:hover {
+  background: rgba(111, 99, 247, 0.06);
+}

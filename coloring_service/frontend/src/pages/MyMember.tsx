@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./MyMember.css";
+import { getAdminToken } from "../auth/authToken";
+
 
 const API_BASE = 
   window.location.hostname === "localhost"
@@ -17,9 +19,12 @@ type Member = {
   number: string;
   name: string;
   birth_date?: string | null;
+  memo?: string | null;
   height_cm?: number | null;
   weight_kg?: number | null;
-  memo?: string | null;
+
+  teacher_id?: number | null;
+  teacher_name?: string | null;
 }
 
 type ResultItem = {
@@ -28,6 +33,31 @@ type ResultItem = {
   created_at: string;
   url: string; // "/uploads/...png"
   note?: string | null;
+};
+
+type EditResultPayload = {
+  id: number;
+  url: string;
+  note?: string | null;
+  selected_date?: string | null;
+  member: {
+    number: string;
+    name: string;
+    birth_date?: string | null;
+    memo?: string | null;
+    height_cm?: number | null;
+    weight_kg?: number | null;
+  };
+};
+
+type Props = {
+  currentUser: {
+    id: number;
+    username: string;
+    display_name: string;
+    role: "admin" | "teacher";
+  };
+  onEditResult: (payload: EditResultPayload) => void;
 };
 
 type ApiResponse = {
@@ -65,7 +95,11 @@ async function fetchJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> 
  * - triggers browser download
  */
 async function downloadByFetch(url: string, filename: string) {
-  const res = await fetch(url, { method: "GET" });
+  const token = getAdminToken();
+  const res = await fetch(url, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) throw new Error(`Download failed (${res.status})`);
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
@@ -105,11 +139,15 @@ function groupByDate(items: ResultItem[]) {
   return keys.map((k) => ({ date: k, items: map.get(k)! }));
 }
 
-export default function MyMember() {
+export default function MyMember({ currentUser, onEditResult }: Props) {
   const [name, setName] = useState("");
   const [data, setData] = useState<ApiResponse | null>(null);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [members, setMembers] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState("");
 
   const [items, setItems] = useState<MemberItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -117,6 +155,7 @@ export default function MyMember() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
+    const token = getAdminToken();
     const q = name.trim();
     if (!q) {
       setMsg("Member name을 입력하세요.");
@@ -126,7 +165,9 @@ export default function MyMember() {
     setMsg("");
 
     try {
-      const res = await fetch(`/api/members/by-name/${encodeURIComponent(q)}/results`);
+      const res = await fetch(`/api/members/by-name/${encodeURIComponent(q)}/results`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
       if (!res.ok) {
         setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
@@ -140,6 +181,31 @@ export default function MyMember() {
       setData(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMembers() {
+    const token = getAdminToken();
+    setMembersLoading(true);
+    setMembersError("");
+
+    try {
+      const res = await fetch("/api/members", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        setMembersError("회원 목록을 불러오지 못했습니다.");
+        setMembers([]);
+        return;
+      }
+
+      const json = (await res.json()) as Member[];
+      setMembers(json);
+    } catch {
+      setMembersError("네트워크 오류");
+      setMembers([]);
+    } finally {
+      setMembersLoading(false);
     }
   }
 
@@ -159,10 +225,13 @@ export default function MyMember() {
   const PAGE_LIMIT = 24;
 
   async function loadFirstPage() {
+    const token = getAdminToken();
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchJson<ResultsResponse>(`/api/results?limit=${PAGE_LIMIT}`);
+      const data = await fetchJson<ResultsResponse>(`/api/results?limit=${PAGE_LIMIT}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       setItems(data.items || []);
       setNextCursor(data.nextCursor ?? null);
     } catch (e: any) {
@@ -173,12 +242,16 @@ export default function MyMember() {
   }
 
   async function loadMore() {
+    const token = getAdminToken();
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     setError(null);
     try {
       const data = await fetchJson<ResultsResponse>(
-        `/api/results?limit=${PAGE_LIMIT}&cursor=${encodeURIComponent(nextCursor)}`
+        `/api/results?limit=${PAGE_LIMIT}&cursor=${encodeURIComponent(nextCursor)}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }
       );
       setItems((prev) => [...prev, ...(data.items || [])]);
       setNextCursor(data.nextCursor ?? null);
@@ -190,13 +263,17 @@ export default function MyMember() {
   }
 
   async function deleteItem(id: string) {
+    const token = getAdminToken();s
     // Optimistic UI
     const prev = items;
     setItems((xs) => xs.filter((x) => x.id !== id));
     if (selectedId === id) setSelectedId(null);
 
     try {
-      const res = await fetch(`/api/images/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/images/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Delete failed: ${res.status}`);
@@ -222,7 +299,9 @@ export default function MyMember() {
   }
 
   useEffect(() => {
-    loadFirstPage();
+    loadMembers();
+    // 필요 없으면 loadFirstPage()는 제거해도 됩니다.
+    // loadFirstPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -261,6 +340,72 @@ export default function MyMember() {
             </div>
           ) : null}
         </aside>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>전체 회원</div>
+
+          {membersLoading ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>불러오는 중...</div>
+          ) : membersError ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>{membersError}</div>
+          ) : members.length === 0 ? (
+            <div style={{ color: "rgba(0,0,0,0.6)" }}>등록된 회원이 없습니다.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="memberTable">
+                <thead>
+                  <tr>
+                    <th>번호</th>
+                    <th>이름</th>
+                    <th>생년월일</th>
+                    <th>키</th>
+                    <th>몸무게</th>
+                    {currentUser.role === "admin" ? <th>담당 선생님</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((m) => (
+                    <tr
+                      key={m.id}
+                      onClick={async () => {
+                        const token = getAdminToken();
+                        setName(m.name);
+
+                        setLoading(true);
+                        setMsg("");
+                        try {
+                          const res = await fetch(`/api/members/by-name/${encodeURIComponent(m.name)}/results`, {
+                            headers: token ? { Authorization: `Bearer ${token}` } : {},
+                          });
+                          if (!res.ok) {
+                            setMsg(res.status === 404 ? "Member not found" : "불러오기 실패");
+                            setData(null);
+                            return;
+                          }
+                          const json = (await res.json()) as ApiResponse;
+                          setData(json);
+                        } catch {
+                          setMsg("네트워크 오류");
+                          setData(null);
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>{m.number}</td>
+                      <td>{m.name}</td>
+                      <td>{m.birth_date ?? "-"}</td>
+                      <td>{m.height_cm ?? "-"}</td>
+                      <td>{m.weight_kg ?? "-"}</td>
+                      {currentUser.role === "admin" ? <td>{m.teacher_name ?? "-"}</td> : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {/* RIGHT */}
         <section className="panelCard" style={{ overflow: "auto" }}>
@@ -316,6 +461,33 @@ export default function MyMember() {
                 {selectedResult.selected_date ?? "No Date"} · Result #{selectedResult.id}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    if (!data || !selectedResult) return;
+
+                    onEditResult({
+                      id: selectedResult.id,
+                      url: selectedResult.url,
+                      note: selectedResult.note ?? "",
+                      selected_date: selectedResult.selected_date ?? "",
+                      member: {
+                        number: data.member.number,
+                        name: data.member.name,
+                        birth_date: data.member.birth_date ?? "",
+                        memo: data.member.memo ?? "",
+                        height_cm: data.member.height_cm ?? null,
+                        weight_kg: data.member.weight_kg ?? null,
+                      },
+                    });
+
+                    setSelectedResult(null);
+                  }}
+                >
+                  Edit
+                </button>
+
                 <a
                   className="btn"
                   href={toApiUrl(selectedResult.url)}
@@ -324,6 +496,7 @@ export default function MyMember() {
                 >
                   Download
                 </a>
+
                 <button className="btn" type="button" onClick={() => setSelectedResult(null)}>
                   Close
                 </button>

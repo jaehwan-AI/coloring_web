@@ -1,16 +1,23 @@
 import React, { useState } from "react";
-import { setAdminToken } from "../auth/adminToken";
+import { setAdminToken } from "../auth/authToken";
 
-export default function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
+
+type LoginUser = {
+  id: number;
+  username: string;
+  display_name: string;
+  role: "admin" | "teacher";
+};
+
+export default function Login({ onSuccess }: { onSuccess: (user: LoginUser) => void }) {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
-  const [page, setPage] = useState<"color" | "member" | "admin">("color");
 
   async function login() {
     setMsg("");
 
-    const res = await fetch("/api/admin/login", {
+    const res = await fetch("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
@@ -24,8 +31,7 @@ export default function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
     const data = await res.json(); // { access_token, token_type }
     setAdminToken(data.access_token);
     setMsg("Logged in");
-
-    onSuccess();
+    onSuccess(data.user);
 
     // 라우팅 쓰면 여기서 이동 처리:
     // navigate("/admin");

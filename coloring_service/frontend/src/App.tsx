@@ -6,11 +6,23 @@ import { COLORS,
 import AppShell from "./layout/AppShell";
 import MyMember from "./pages/MyMember";
 import SchedulePage from "./pages/Schedule";
-import AdminLogin from "./pages/AdminLogin";
-import { clearAdminToken, getAdminToken } from "./auth/adminToken";
+import Login from "./pages/Login";
+import { clearAdminToken, getAdminToken } from "./auth/authToken";
+import AdminMembers from "./pages/AdminMembers";
 
 
-type Color = "red" | "blue";
+const API_BASE =
+  window.location.hostname === "localhost"
+    ? "http://localhost:8000"
+    : `${window.location.protocol}//${window.location.hostname}:8000`;
+
+function toApiUrl(url?: string | null) {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${API_BASE}${url}`;
+}
+
+type Color = "red" | "blue" | "restore";
 
 type MemberInfo = {
   number: string;
@@ -19,6 +31,15 @@ type MemberInfo = {
   memo?: string;
   height_cm?: number | null;
   weight_kg?: number | null;
+  teacher_id?: number | null;
+};
+
+type EditingResultPayload = {
+  id: number;
+  url: string;
+  note?: string | null;
+  selected_date?: string | null;
+  member: MemberInfo;
 };
 
 function drawImageContainShiftUp(
@@ -68,14 +89,70 @@ export default function App() {
 
   const bgMaskRef = useRef<Uint8Array | null>(null);
 
-  const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("admin");
-  const [adminAuthed, setAdminAuthed] = useState(false);
+  type AuthUser = {
+    id: number;
+    username: string;
+    display_name: string;
+    role: "admin" | "teacher";
+  };
+
+  type TeacherOption = {
+    id: number;
+    username: string;
+    display_name: string;
+    role: "admin" | "teacher";
+  };
+
+  const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("color");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [teachers, setTeachers] = useState<TeacherOption[]>([]);
 
   useEffect(() => {
-    clearAdminToken();
-    setAdminAuthed(false);
-    setPage("admin");
+    const token = getAdminToken();
+    if (!token) {
+      setCurrentUser(null);
+      return;
+    }
+
+    fetch("/api/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((user) => {
+        setCurrentUser(user);
+      })
+      .catch(() => {
+        clearAdminToken();
+        setCurrentUser(null);
+      });
   }, []);
+
+  useEffect(() => {
+    if (currentUser?.role !== "admin") {
+      setTeachers([]);
+      return;
+    }
+
+    const token = getAdminToken();
+    if (!token) return;
+
+    fetch("/api/admin/teachers", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((data) => {
+        setTeachers(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        setTeachers([]);
+      });
+  }, [currentUser]);
 
   // ===== Member panel state =====
   const [member, setMember] = useState<MemberInfo>({ 
@@ -84,7 +161,9 @@ export default function App() {
     birth_date: "",
     memo: "",
     height_cm: undefined,
-    weight_kg: undefined, });
+    weight_kg: undefined,
+    teacher_id: null,
+  });
   const [memberMsg, setMemberMsg] = useState<string>("");
   const [loadingMember, setLoadingMember] = useState<boolean>(false);
   const [savingMember, setSavingMember] = useState<boolean>(false);
@@ -98,6 +177,8 @@ export default function App() {
   });
 
   const [resultNote, setResultNote] = useState("");
+
+  const [editingResultId, setEditingResultId] = useState<number | null>(null);
 
   const hasImage = !!imgUrl;
 
@@ -116,6 +197,7 @@ export default function App() {
 
   // ===== Member Load (name) =====
   async function loadMemberByName() {
+    const token = getAdminToken();
     const name = member.name.trim();
     if (!name) {
       setMemberMsg("Please enter member number.");
@@ -125,7 +207,9 @@ export default function App() {
     setMemberMsg("");
     try {
       // 1) Try direct endpoint (if exists)
-      const res = await fetch(`/api/members/${encodeURIComponent(name)}`);
+      const res = await fetch(`/api/members/${encodeURIComponent(name)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!res.ok) {
         // 2) Fallback: search endpoint returning list (if exists)
         alert("Member not found.");
@@ -147,12 +231,13 @@ export default function App() {
       }
 
       setMember({
-        number: data.number ?? "",
-        name: data.name ?? name,
-        birth_date: data.birth_date ?? "",
-        memo: data.memo ?? "",
-        height_cm: data.height_cm ?? null,
-        weight_kg: data.weight_kg ?? null,
+        number: memberData.number ?? "",
+        name: memberData.name ?? name,
+        birth_date: memberData.birth_date ?? "",
+        memo: memberData.memo ?? "",
+        height_cm: memberData.height_cm ?? null,
+        weight_kg: memberData.weight_kg ?? null,
+        teacher_id: memberData.teacher_id ?? null,
       });
       setMemberMsg("Loaded.");
     } catch {
@@ -164,18 +249,28 @@ export default function App() {
 
   // ===== Member Save (DB) =====
   async function saveMemberToDB() {
+    const token = getAdminToken();
     const number = member.number.trim();
     const name = member.name.trim();
     if (!number || !name) {
       setMemberMsg("Number and Name are required.");
       return;
     }
+
+    if (currentUser?.role === "admin" && !member.teacher_id) {
+      setMemberMsg("Teacher ID is required for admin.");
+      return;
+    }
+
     setSavingMember(true);
     setMemberMsg("");
     try {
       const res = await fetch("/api/members/upsert", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           number,
           name,
@@ -183,12 +278,20 @@ export default function App() {
           memo: member.memo ?? "",
           height_cm: member.height_cm ?? null,
           weight_kg: member.weight_kg ?? null,
+          teacher_id: currentUser?.role === "admin" ? member.teacher_id : undefined,
         }),
       });
 
       if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        setMemberMsg(txt || "Failed to save member.");
+        let msg = "Failed to save member.";
+        try {
+          const err = await res.json();
+          msg = err?.detail || msg;
+        } catch {
+          const txt = await res.text().catch(() => "");
+          if (txt) msg = txt;
+        }
+        setMemberMsg(msg);
         return;
       }
 
@@ -200,7 +303,14 @@ export default function App() {
     }
   }
 
+  function cancelEditMode() {
+    setEditingResultId(null);
+    setResultNote("");
+    setImgUrl(null);
+  }
+
   async function saveColoredToDB() {
+    const token = getAdminToken();
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -213,36 +323,74 @@ export default function App() {
 
     const image_data_url = canvas.toDataURL("image/png");
 
-    const res = await fetch("/api/results/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        member: {
-          number,
-          name,
-          birth_date: member.birth_date || null,
-          memo: member.memo ?? "",
-          height_cm: member.height_cm ?? null,
-          weight_kg: member.weight_kg ?? null,
-        },
-        image_data_url,
-        selected_date: selectedDate, // ✅ 함께 저장
-        original_id: null,
-        note: resultNote,
-        original_upload_url: imgUrl,
-      }),
+    const payload = {
+      member: {
+        number,
+        name,
+        birth_date: member.birth_date || null,
+        memo: member.memo ?? "",
+        height_cm: member.height_cm ?? null,
+        weight_kg: member.weight_kg ?? null,
+      },
+      image_data_url,
+      selected_date: selectedDate || null,
+      original_id: editingResultId,
+      note: resultNote,
+      original_upload_url: editingResultId ? null : imgUrl,
+    };
+
+    const isEditing = editingResultId !== null;
+    const url = isEditing ? `/api/results/${editingResultId}` : "/api/results/save";
+    const method = isEditing ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method,
+      headers: { 
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      alert(t || "Failed to save colored result.");
+      alert(t || (isEditing ? "Failed to update colored result." : "Failed to save colored result."));
       return;
     }
-    
-    setResultNote("");  // 메모 초기화
-    alert("Saved colored result!");
+
+    setResultNote("");
+    setEditingResultId(null);
+
+    alert(isEditing ? "Updated colored result!" : "Saved colored result!");
   }
 
+  function startEditResult(payload: EditingResultPayload) {
+    const baseUrl = toApiUrl(payload.url);
+    const nextUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+
+    setEditingResultId(payload.id);
+
+    setMember({
+      number: payload.member.number ?? "",
+      name: payload.member.name ?? "",
+      birth_date: payload.member.birth_date ?? "",
+      memo: payload.member.memo ?? "",
+      height_cm: payload.member.height_cm ?? null,
+      weight_kg: payload.member.weight_kg ?? null,
+    });
+
+    setSelectedDate(payload.selected_date ?? "");
+    setResultNote(payload.note ?? "");
+
+    // 같은 URL이어도 강제로 다시 로드되게 함
+    setImgUrl(null);
+    requestAnimationFrame(() => {
+      setImgUrl(nextUrl);
+    });
+
+    setPage("color");
+  }
+  
   // ===== Canvas sizing: match CSS box (fixes click mapping & iPad issues) =====
   function sizeCanvasToCssBox() {
     const canvas = canvasRef.current;
@@ -454,18 +602,107 @@ export default function App() {
     if (!mask) return;
 
     pushUndo(ctx);
-    floodFillWithBgMask(ctx, x, y, COLORS[selected], mask, 35);
+
+    if (selected === "restore") {
+      restoreAt(ctx, x, y, mask, 35);
+    } else {
+      floodFillWithBgMask(ctx, x, y, COLORS[selected], mask, 35);
+    }
+
     saveWorkingSnapshot(ctx);
+  }
+
+  function restoreAt(
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    startY: number,
+    bgMask: Uint8Array,
+    tolerance = 35
+  ) {
+    const canvas = ctx.canvas;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    const current = ctx.getImageData(0, 0, w, h);
+    // const original = originalRef.current;
+    // if (!original) return;
+
+    if (
+      startX < 0 || startY < 0 ||
+      startX >= w || startY >= h
+    ) {
+      return;
+    }
+
+    const startIdx = startY * w + startX;
+
+    // 배경은 복원 대상으로 보지 않음
+    if (bgMask[startIdx]) return;
+
+    const data = current.data;
+    // const orig = original.data;
+
+    const base = startIdx * 4;
+    const targetR = data[base];
+    const targetG = data[base + 1];
+    const targetB = data[base + 2];
+    const targetA = data[base + 3];
+
+    // 빨강/파랑 색칠 영역만 지우기
+    const isColoredArea = 
+      (targetR > 150 && targetR > targetG + 40 && targetR > targetB + 40) ||  // red-ish
+      (targetB > 150 && targetB > targetR + 40 && targetB > targetG + 20);    // blue-ish
+    if (!isColoredArea) return;
+
+    const visited = new Uint8Array(w * h);
+    const stack: number[] = [startIdx];
+
+    function closeEnough(i: number) {
+      const p = i * 4;
+      return (
+        Math.abs(data[p] - targetR) <= tolerance &&
+        Math.abs(data[p + 1] - targetG) <= tolerance &&
+        Math.abs(data[p + 2] - targetB) <= tolerance &&
+        Math.abs(data[p + 3] - targetA) <= tolerance
+      );
+    }
+
+    while (stack.length) {
+      const idx = stack.pop()!;
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+
+      if (bgMask[idx]) continue;
+      if (!closeEnough(idx)) continue;
+
+      const p = idx * 4;
+
+      // 현재 영역을 원본 픽셀로 복원
+      data[p] = 255;
+      data[p + 1] = 255;
+      data[p + 2] = 255;
+      data[p + 3] = 255;
+
+      const x = idx % w;
+      const y = Math.floor(idx / w);
+
+      if (x > 0) stack.push(idx - 1);
+      if (x < w - 1) stack.push(idx + 1);
+      if (y > 0) stack.push(idx - w);
+      if (y < h - 1) stack.push(idx + w);
+    }
+
+    ctx.putImageData(current, 0, 0);
   }
 
   console.log("APP.TSX LOADED ✅", new Date().toISOString());
 
-  if (!adminAuthed) {
+  if (!currentUser) {
     return (
-      <AdminLogin
-        onSuccess={() => {
-          setAdminAuthed(true);
-          setPage("color");  // 로그인 성공 후 이동
+      <Login
+        onSuccess={(user) => {
+          setCurrentUser(user);
+          setPage("color");
         }}
       />
     );
@@ -475,6 +712,7 @@ export default function App() {
     <AppShell
       page={page}
       setPage={setPage}
+      currentUser={currentUser}
       // keep existing top buttons (red/blue/undo/reset/save)
       colorToolbar={
         <>
@@ -497,6 +735,9 @@ export default function App() {
           <button className="btn" aria-pressed={selected === "blue"} onClick={() => setSelected("blue")}>
             <span className="sw" style={{ background: "#1e88e5" }} /> Blue
           </button>
+          <button className="btn" aria-pressed={selected === "restore"} onClick={() => setSelected("restore")}>
+            <span className="sw" style={{ background: "#ffffff", border: "1px solid #ccc" }} /> Restore
+          </button>
 
           <button className="btn" onClick={undo} disabled={!hasImage}>
             ↩️ Undo
@@ -508,15 +749,23 @@ export default function App() {
             💾 Save
           </button> */}
           <button className="btn" onClick={saveColoredToDB}>
-            💾 Save Colored Result
+            {editingResultId !== null ? "💾 Update Colored Result" : "💾 Save Colored Result"}
           </button>
         </>
       }
     >
       {page === "member" ? (
-        <MyMember />
+        <MyMember currentUser={currentUser} onEditResult={startEditResult} />
       ) : page === "schedule" ? (
         <SchedulePage />
+      ) : page === "admin" ? (
+        currentUser.role === "admin" ? (
+          <AdminMembers />
+        ) : (
+          <div className="panelCard" style={{ padding: 16 }}>
+            관리자만 접근할 수 있습니다.
+          </div>
+        )
       ) : (
         <>
           <div className="colorLayout3">
@@ -524,8 +773,14 @@ export default function App() {
             <section className="panelCard memberPanel">
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Member</h3>
 
+                {editingResultId !== null && (
+                  <div style={{ marginBottom: 10, fontSize: 12, color: "#6b5cff", fontWeight: 700 }}>
+                    Editing Result #{editingResultId}
+                  </div>
+                )}
+
               <div className="memberRow">
-                <label style={{ flex: 1, marginBottom: 0, marginBottom: 0 }}>
+                <label style={{ flex: 1, marginBottom: 0 }}>
                   Name
                   <input
                     value={member.name}
@@ -599,10 +854,31 @@ export default function App() {
                 />
               </label>
 
+              {currentUser?.role === "admin" && (
+                <input
+                  className="textInput"
+                  placeholder="Teacher ID"
+                  type="number"
+                  value={member.teacher_id ?? ""}
+                  onChange={(e) =>
+                    setMember((prev) => ({
+                      ...prev,
+                      teacher_id: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                />
+              )}
+
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button className="btn" onClick={saveMemberToDB} disabled={savingMember}>
                   {savingMember ? "Saving..." : "Save Member"}
                 </button>
+
+                {editingResultId !== null && (
+                  <button className="btn" onClick={cancelEditMode} type="button">
+                    Cancel Edit
+                  </button>
+                )}
               </div>
 
               {memberMsg && <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>{memberMsg}</div>}
@@ -639,7 +915,6 @@ export default function App() {
           </div>
         </>
       )}
-      {page === "admin" && <AdminLogin />}
     </AppShell>
   );
 }

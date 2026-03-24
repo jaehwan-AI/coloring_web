@@ -7,7 +7,7 @@ import "./Schedule.css";
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 
-import { getAdminToken } from "../auth/adminToken";
+import { getAdminToken } from "../auth/authToken";
 
 type ScheduleItem = {
   id: number;
@@ -53,11 +53,23 @@ function addHours(d: Date, hours: number) {
   return x;
 }
 
+function addMinutes(d: Date, minutes: number) {
+  const x = new Date(d);
+  x.setMinutes(x.getMinutes() + minutes);
+  return x;
+}
+
+function setToHour(d: Date) {
+  const x = new Date(d);
+  x.setMinutes(0, 0, 0);
+  return x;
+}
+
 function setDefaultTimeRangeForDay(day: Date) {
     const start = new Date(day);
     start.setHours(9, 0, 0, 0); // 기본 시작 09:00
     const end = new Date(day);
-    end.setHours(10, 0, 0, 0); // 기본 종료 10:00
+    end.setHours(9, 50, 0, 0); // 기본 종료 09:50
     return { start, end };
 }
 
@@ -192,9 +204,12 @@ export default function SchedulePage() {
     await load();
   }
 
-  function openCreateModal(start: Date, end: Date) {
-    setStartAt(toLocalInputValue(start));
-    setEndAt(toLocalInputValue(end));
+  function openCreateModal(start: Date) {
+    const normalizedStart = setToHour(start);
+    const normalizedEnd = addMinutes(normalizedStart, 50);
+
+    setStartAt(toLocalInputValue(normalizedStart));
+    setEndAt(toLocalInputValue(normalizedEnd));
     setTitle("");
     setNote("");
     setOpen(true);
@@ -304,7 +319,12 @@ export default function SchedulePage() {
               <button className="btn" onClick={() => setView(Views.MONTH)} aria-pressed={view === Views.MONTH}>월</button>
               <button className="btn" onClick={() => setView(Views.WEEK)} aria-pressed={view === Views.WEEK}>주</button>
               <button className="btn" onClick={load} disabled={loading}>{loading ? "불러오는 중..." : "새로고침"}</button>
-              <button className="btn" onClick={() => { setEditingId(null); openCreateModal(new Date(), addHours(new Date(), 1)); }}>
+              <button className="btn" onClick={() => {
+                setEditingId(null);
+                const { start } = setDefaultTimeRangeForDay(selectedDay);
+                openCreateModal(start);
+                }}
+              >
                 + 일정
               </button>
             </div>
@@ -322,24 +342,36 @@ export default function SchedulePage() {
               onNavigate={(d) => setDate(d)}
               selectable
               popup
+              dayPropGetter={(day) => {
+                const sameDay = 
+                  day.getFullYear() === selectedDay.getFullYear() &&
+                  day.getMonth() === selectedDay.getMonth() &&
+                  day.getDate() === selectedDay.getDate();
+
+                return {
+                  className: sameDay ? "schedule-selected-day" : "",
+                };
+              }}
               
               /* ✅ 달력이 화면 대부분을 차지하도록: 높이는 화면 기준으로 유동 */
               style={{ height: "calc(100vh - 220px)", minHeight: 720, width: "100%" }}
               
               onSelectSlot={(slot) => {
                 const s = slot.start as Date;
-                const e = slot.end as Date;
+                // const e = slot.end as Date;
                 setSelectedDay(new Date(s));
 
-                if (view === Views.MONTH) {
-                  const { start, end } = setDefaultTimeRangeForDay(s);
-                  openCreateModal(start, end);
-                  return;
-                }
-                openCreateModal(s, e);
+                // if (view === Views.MONTH) {
+                //   const { start, end } = setDefaultTimeRangeForDay(s);
+                //   openCreateModal(start, end);
+                //   return;
+                // }
+                // openCreateModal(s, e);
+                setDate(new Date(s));
               }}
               onSelectEvent={(ev) => {
                 setSelectedDay(new Date(ev.start));
+                setDate(new Date(ev.start));
                 const item = ev.resource;
                 setEditingId(item.id);
                 setTitle(item.title);
@@ -395,7 +427,7 @@ export default function SchedulePage() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0 }}>일정 등록</h3>
+              <h3 style={{ margin: 0 }}>{editingId ? "일정 수정" : "일정 등록"}</h3>
               <button className="btn" onClick={() => setOpen(false)}>
                 닫기
               </button>
@@ -410,11 +442,29 @@ export default function SchedulePage() {
               <div className="memberRow">
                 <label style={{ flex: 1, marginBottom: 0 }}>
                   시작
-                  <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+                  <input
+                    type="datetime-local"
+                    step={3600}
+                    value={startAt}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (!raw) {
+                        setStartAt("");
+                        setEndAt("");
+                        return;
+                      }
+
+                      const start = setToHour(new Date(raw));
+                      const end = addMinutes(start, 50);
+
+                      setStartAt(toLocalInputValue(start));
+                      setEndAt(toLocalInputValue(end));
+                    }}
+                  />
                 </label>
                 <label style={{ flex: 1, marginBottom: 0 }}>
-                  종료(선택)
-                  <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+                  종료(자동)
+                  <input type="datetime-local" value={endAt} readOnly />
                 </label>
               </div>
 
@@ -434,7 +484,7 @@ export default function SchedulePage() {
             </div>
 
             <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-              * 캘린더에서 빈 시간대 드래그/클릭 → 일정 등록 / 일정 클릭 → 삭제
+              * 날짜를 먼저 선택한 뒤 오른쪽 상단의 + 일정 버튼으로 등록 / 기존 일정 클릭 → 수정
             </div>
           </div>
         </div>
