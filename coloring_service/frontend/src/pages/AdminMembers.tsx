@@ -21,6 +21,8 @@ type MemberRow = {
   weight_kg?: number | null;
   teacher_id?: number | null;
   teacher_name?: string | null;
+  pt_total_count?: number | null;
+  pt_remaining_count?: number | null;
 };
 
 type TeacherCreateForm = {
@@ -437,6 +439,8 @@ export default function AdminMembers() {
                 <th>키</th>
                 <th>몸무게</th>
                 <th>담당 선생님</th>
+                <th>총 PT</th>
+                <th>남은 PT</th>
               </tr>
             </thead>
             <tbody>
@@ -460,6 +464,8 @@ export default function AdminMembers() {
                       ))}
                     </select>
                   </td>
+                  <td>{m.pt_total_count ?? 0}</td>
+                  <td>{m.pt_remaining_count ?? 0}</td>
                 </tr>
               ))}
             </tbody>

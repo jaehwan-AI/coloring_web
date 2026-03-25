@@ -25,6 +25,9 @@ type Member = {
 
   teacher_id?: number | null;
   teacher_name?: string | null;
+
+  pt_total_count?: number;
+  pt_remaining_count?: number;
 }
 
 type ResultItem = {
@@ -209,6 +212,46 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
     }
   }
 
+  async function rechargePt(memberId: number, amount: number) {
+    const token = getAdminToken();
+    const res = await fetch(`/api/members/${memberId}/pt/recharge`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ amount }),
+    });
+
+    if (!res.ok) {
+      alert("PT 충전 실패");
+      return;
+    }
+
+    await load();
+    await loadMembers();
+  }
+
+  async function consumePt(memberId: number) {
+    const token = getAdminToken();
+    const res = await fetch(`/api/members/${memberId}/pt/consume`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ amount: 1 }),
+    });
+
+    if (!res.ok) {
+      alert("PT 차감 실패");
+      return;
+    }
+
+    await load();
+    await loadMembers();
+  }
+
   const grouped = useMemo(() => (data ? groupByDate(data.items) : []), [data]);
 
   // Modal (member results)
@@ -336,6 +379,21 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
               <div style={{ marginTop: 6, color: "rgba(0,0,0,0.6)" }}>
                 Height: {data.member.height_cm ?? "-"} cm / Weight: {data.member.weight_kg ?? "-"} kg
               </div>
+
+              <div style={{ marginTop: 6 }}>
+                PT Total: {data.member.pt_total_count ?? 0} /
+                Remaining: {data.member.pt_remaining_count ?? 0}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop:10 }}>
+                <button onClick={() => rechargePt(data.member.id, 10)}>
+                  PT 10회 충전
+                </button>
+                <button onClick={() => consumePt(data.member.id)}>
+                  PT 1회 차감
+                </button>
+              </div>
+
               {data.member.memo ? <div style={{ marginTop: 6 }}>{data.member.memo}</div> : null}
             </div>
           ) : null}

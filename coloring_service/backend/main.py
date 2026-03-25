@@ -173,6 +173,9 @@ class MemberOut(BaseModel):
     teacher_id: Optional[int] = None
     teacher_name: Optional[str] = None
 
+    pt_total_count: int = 0
+    pt_remaining_count: int = 0
+
     created_at: datetime
     updated_at: datetime
 
@@ -258,6 +261,12 @@ class TeacherPasswordResetIn(BaseModel):
 
 class MemberTeacherAssignIn(BaseModel):
     teacher_id: int
+
+class MemberPtReachargeIn(BaseModel):
+    amount: int
+
+class MemberPtConsumeIn(BaseModel):
+    amount: int = 1
 
 def create_access_token(user: User) -> str:
     exp = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_MINUTES)
@@ -348,6 +357,8 @@ def upsert_member(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        pt_total_count=m.pt_total_count,
+        pt_remaining_count=m.pt_remaining_count,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -401,6 +412,8 @@ def list_members(
                 weight_kg=m.weight_kg,
                 teacher_id=m.teacher_id,
                 teacher_name=teacher.display_name if teacher else None,
+                pt_total_count=m.pt_total_count,
+                pt_remaining_count=m.pt_remaining_count,
                 created_at=m.created_at,
                 updated_at=m.updated_at,
             )
@@ -812,6 +825,8 @@ def list_results(
                     memo=m.memo,
                     height_cm=m.height_cm,
                     weight_kg=m.weight_kg,
+                    pt_total_count=m.pt_total_count,
+                    pt_remaining_count=m.pt_remaining_count,
                     created_at=m.created_at,
                     updated_at=m.updated_at,
                 ),
@@ -957,6 +972,8 @@ def get_member_results(
             height_cm=m.height_cm,
             weight_kg=m.weight_kg,
             teacher_id=getattr(m, "teacher_id", None),
+            pt_total_count=m.pt_total_count,
+            pt_remaining_count=m.pt_remaining_count,
             created_at=m.created_at,
             updated_at=m.updated_at,
         ),
@@ -1092,6 +1109,8 @@ def assign_member_teacher(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name,
+        pt_total_count=m.pt_total_count,
+        pt_remaining_count=m.pt_remaining_count,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -1285,6 +1304,96 @@ def get_result_image(result_id: int, session: Session = Depends(get_session)):
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Image file not found")
         return FileResponse(str(file_path), media_type=r.mime or "image/png")
+
+
+@app.post("/api/members/{member_id}/pt/recharge", response_model=MemberOut)
+def recharge_member_pt(
+    member_id: int,
+    payload: MemberPtRechargeIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    m = session.get(Member, member_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    ensure_member_access(user, m)
+
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be > 0")
+
+    m.pt_total_count += payload.amount
+    m.pt_remaining_count += payload.amount
+    m.updated_at = datetime.utcnow()
+
+    session.add(m)
+    session.commit()
+    session.refresh(m)
+
+    teacher = session.get(User, m.teacher_id)
+
+    return MemberOut(
+        id=m.id,
+        number=m.number,
+        name=m.name,
+        birth_date=m.birth_date,
+        memo=m.memo,
+        height_cm=m.height_cm,
+        weight_kg=m.weight_kg,
+        teacher_id=m.teacher_id,
+        teacher_name=teacher.display_name if teacher else None,
+        pt_total_count=m.pt_total_count,
+        pt_remaining_count=m.pt_remaining_count,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+@app.post("/api/members/{member_id}/pt/consume", response_model=MemberOut)
+def consume_member_pt(
+    member_id: int,
+    payload: MemberPtConsumeIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    m = session.get(Member, member_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    ensure_member_access(user, m)
+
+    amount = payload.amount or 1
+
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be > 0")
+
+    if m.pt_remaining_count < amount:
+        raise HTTPException(status_code=400, detail="Not enough PT remaining")
+
+    m.pt_remaining_count -= amount
+    m.updated_at = datetime.utcnow()
+
+    session.add(m)
+    session.commit()
+    session.refresh(m)
+
+    teacher = session.get(User, m.teacher_id)
+
+    return MemberOut(
+        id=m.id,
+        number=m.number,
+        name=m.name,
+        birth_date=m.birth_date,
+        memo=m.memo,
+        height_cm=m.height_cm,
+        weight_kg=m.weight_kg,
+        teacher_id=m.teacher_id,
+        teacher_name=teacher.display_name if teacher else None,
+        pt_total_count=m.pt_total_count,
+        pt_remaining_count=m.pt_remaining_count,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
 
 
 # (선택) 배포 시 frontend 빌드 결과를 백엔드가 서빙하도록 할 때

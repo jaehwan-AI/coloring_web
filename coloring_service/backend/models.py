@@ -29,6 +29,10 @@ class Member(SQLModel, table=True):
 
     teacher_id: int = Field(foreign_key="user.id", index=True)
 
+    # PT 관리
+    pt_total_count: int = Field(default=0)
+    pt_remaining_count: int = Field(default=0)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
