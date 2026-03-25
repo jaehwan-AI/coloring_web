@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from db import init_db, get_session, engine
+from db import init_db, reset_db, get_session, engine
 from models import User, Member, ColoredResult, Schedule
 
 from fastapi.security import OAuth2PasswordBearer
@@ -104,7 +104,10 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # ✅ DB 테이블 생성 (개발용)
-init_db()
+if os.getenv("RESET_DB_ON_STARTUP") == "1":
+    reset_db()
+else:
+    init_db()
 
 def seed_admin_user():
     with Session(engine) as session:
@@ -159,11 +162,12 @@ class MemberUpsertIn(BaseModel):
 
     teacher_id: Optional[int] = None
 
+    membership_name: Optional[str] = None
     course_name: Optional[str] = None
-    contract_status: Optional[str] = "draft"
+    contract_status: Optional[str] = "작성 전"
     contract_start_date: Optional[date] = None
     contract_end_date: Optional[date] = None
-    contract_signed_at: Optional[datetime] = None
+    contract_signed_at: Optional[date] = None
     contract_memo: Optional[str] = None
 
 class MemberOut(BaseModel):
@@ -178,11 +182,12 @@ class MemberOut(BaseModel):
     teacher_id: Optional[int] = None
     teacher_name: Optional[str] = None
 
+    membership_name: Optional[str] = None
     course_name: Optional[str] = None
     contract_status: Optional[str] = None
     contract_start_date: Optional[date] = None
     contract_end_date: Optional[date] = None
-    contract_signed_at: Optional[datetime] = None
+    contract_signed_at: Optional[date] = None
     contract_memo: Optional[str] = None
 
     pt_total_count: int = 0
@@ -336,18 +341,29 @@ def upsert_member(
         if user.role == "teacher" and m.teacher_id != user.id:
             raise HTTPException(status_code=403, detail="Cannot edit another teacher's member")
 
+        prev_course_name = m.course_name
+
         m.name = payload.name
         m.birth_date = payload.birth_date
         m.memo = payload.memo
         m.height_cm = payload.height_cm
         m.weight_kg = payload.weight_kg
         m.teacher_id = target_teacher_id
+
+        m.membership_name = payload.membership_name
         m.course_name = payload.course_name
-        m.contract_status = payload.contract_status or "draft"
+        m.contract_status = normalize_contract_status(payload.contract_status)
         m.contract_start_date = payload.contract_start_date
         m.contract_end_date = payload.contract_end_date
         m.contract_signed_at = payload.contract_signed_at
         m.contract_memo = payload.contract_memo
+
+        if payload.course_name and payload.course_name != prev_course_name:
+            charge_amount = pt_amount_from_course(payload.course_name)
+            if charge_amount > 0:
+                m.pt_total_count += charge_amount
+                m.pt_remaining_count += charge_amount
+
         m.updated_at = datetime.utcnow()
     else:
         m = Member(
@@ -358,13 +374,20 @@ def upsert_member(
             height_cm=payload.height_cm,
             weight_kg=payload.weight_kg,
             teacher_id=target_teacher_id,
+
+            membership_name=payload.membership_name,
             course_name=payload.course_name,
-            contract_status=payload.contract_status or "draft",
+            contract_status=normalize_contract_status(payload.contract_status),
             contract_start_date=payload.contract_start_date,
             contract_end_date=payload.contract_end_date,
             contract_signed_at=payload.contract_signed_at,
             contract_memo=payload.contract_memo,
         )
+
+        charge_amount = pt_amount_from_course(payload.course_name)
+        if charge_amount > 0:
+            m.pt_total_count = charge_amount
+            m.pt_remaining_count = charge_amount
 
     session.add(m)
     session.commit()
@@ -382,6 +405,7 @@ def upsert_member(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        membership_name=m.membership_name,
         course_name=m.course_name,
         contract_status=m.contract_status,
         contract_start_date=m.contract_start_date,
@@ -417,6 +441,7 @@ def get_member(
         "weight_kg": m.weight_kg,
         "teacher_id": m.teacher_id,
         "teacher_name": teacher.display_name if teacher else None,
+        "membership_name": m.membership_name,
         "course_name": m.course_name,
         "contract_status": m.contract_status,
         "contract_start_date": m.contract_start_date,
@@ -450,6 +475,7 @@ def get_member_by_number(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        membership_name=m.membership_name,
         course_name=m.course_name,
         contract_status=m.contract_status,
         contract_start_date=m.contract_start_date,
@@ -543,6 +569,7 @@ def get_member_results_by_name(
             "memo": m.memo,
             "teacher_id": m.teacher_id,
             "teacher_name": teacher.display_name if teacher else None,
+            "membership_name": m.membership_name,
             "course_name": m.course_name,
             "contract_status": m.contract_status,
             "contract_start_date": m.contract_start_date,
@@ -626,6 +653,7 @@ def get_member_detail(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        membership_name=m.membership_name,
         course_name=m.course_name,
         contract_status=m.contract_status,
         contract_start_date=m.contract_start_date,
@@ -653,6 +681,29 @@ def ensure_member_access(user: User, member: Member):
         return
 
     raise HTTPException(status_code=403, detail="Forbidden member access")
+
+def normalize_contract_status(status: Optional[str]) -> str:
+    mapping = {
+        None: "작성 전",
+        "": "작성 전",
+        "draft": "작성 전",
+        "active": "진행 중",
+        "expired": "만료",
+        "terminated": "해지",
+        "작성 전": "작성 전",
+        "진행 중": "진행 중",
+        "만료": "만료",
+        "해지": "해지",
+    }
+    return mapping.get(status, "작성 전")
+
+def pt_amount_from_course(course_name: Optional[str]) -> int:
+    mapping = {
+        "10회권": 10,
+        "20회권": 20,
+        "30회권": 30,
+    }
+    return mapping.get(course_name or "", 0)
 
 # ---------------------------
 # Save colored image (with member link)
@@ -1075,6 +1126,7 @@ def get_member_results(
             weight_kg=m.weight_kg,
             teacher_id=getattr(m, "teacher_id", None),
             teacher_name=None,
+            membership_name=m.membership_name,
             course_name=m.course_name,
             contract_status=m.contract_status,
             contract_start_date=m.contract_start_date,
@@ -1218,6 +1270,12 @@ def assign_member_teacher(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name,
+        membership_name=m.membership_name,
+        course_name=m.course_name,
+        contract_status=m.contract_status,
+        contract_start_date=m.contract_start_date,
+        contract_end_date=m.contract_end_date,
+        contract_signed_at=m.contract_signed_at,
         pt_total_count=m.pt_total_count,
         pt_remaining_count=m.pt_remaining_count,
         created_at=m.created_at,
@@ -1451,6 +1509,7 @@ def recharge_member_pt(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        membership_name=m.membership_name,
         course_name=m.course_name,
         contract_status=m.contract_status,
         contract_start_date=m.contract_start_date,
@@ -1504,6 +1563,7 @@ def consume_member_pt(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        membership_name=m.membership_name,
         course_name=m.course_name,
         contract_status=m.contract_status,
         contract_start_date=m.contract_start_date,

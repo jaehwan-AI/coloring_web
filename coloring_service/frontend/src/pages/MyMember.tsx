@@ -25,6 +25,7 @@ type Member = {
 
   teacher_id?: number | null;
   teacher_name?: string | null;
+  membership_name?: string | null;
   course_name?: string | null;
   contract_status?: string | null;
   contract_start_date?: string | null;
@@ -313,7 +314,7 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
   }
 
   async function deleteItem(id: string) {
-    const token = getAdminToken();s
+    const token = getAdminToken();
     // Optimistic UI
     const prev = items;
     setItems((xs) => xs.filter((x) => x.id !== id));
@@ -388,11 +389,15 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
               </div>
 
               <div style={{ marginTop: 6, color: "rgba(0,0,0,0.6)" }}>
-                Course: {data.member.course_name ?? "-"} / Contract: {data.member.contract_status ?? "-"}
+                회원권: {data.member.course_name ?? "-"} / 수강권: {data.member.contract_status ?? "-"}
               </div>
 
               <div style={{ marginTop: 6, color: "rgba(0,0,0,0.6)" }}>
-                Contract Period: {data.member.contract_start_date ?? "-"} ~ {data.member.contract_end_date ?? "-"}
+                계약 상태: {data.member.contract_status ?? "-"} / 계약 기간: {data.member.contract_start_date ?? "-"} ~ {data.member.contract_end_date ?? "-"}
+              </div>
+
+              <div style={{ marginTop: 6, color: "rgba(0,0,0,0.6)" }}>
+                계약 작성일: {data.member.contract_signed_at ?? "-"}
               </div>
 
               <div style={{ marginTop: 6 }}>
@@ -401,8 +406,8 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop:10 }}>
-                <button onClick={() => rechargePt(data.member.id, 10)}>
-                  PT 10회 충전
+                <button onClick={() => rechargePt(data.member.id, 1)}>
+                  PT 1회 충전
                 </button>
                 <button onClick={() => consumePt(data.member.id)}>
                   PT 1회 차감
@@ -433,6 +438,7 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                     <th>생년월일</th>
                     <th>키</th>
                     <th>몸무게</th>
+                    <th>회원권</th>
                     <th>수강권</th>
                     <th>남은 PT</th>
                     <th>총 PT</th>
@@ -474,6 +480,7 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                       <td>{m.birth_date ?? "-"}</td>
                       <td>{m.height_cm ?? "-"}</td>
                       <td>{m.weight_kg ?? "-"}</td>
+                      <td>{m.membership_name ?? "-"}</td>
                       <td>{m.course_name ?? "-"}</td>
                       <td>{m.pt_remaining_count ?? 0}</td>
                       <td>{m.pt_total_count ?? 0}</td>

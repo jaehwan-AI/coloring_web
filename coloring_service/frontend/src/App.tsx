@@ -36,12 +36,15 @@ type MemberInfo = {
   weight_kg?: number | null;
   teacher_id?: number | null;
   teacher_name?: string | null;
+  membership_name?: string | null;
   course_name?: string | null;
   contract_status?: string | null;
   contract_start_date?: string | null;
   contract_end_date?: string | null;
   contract_signed_at?: string | null;
   contract_memo?: string | null;
+  pt_total_count?: number;
+  pt_remaining_count?: number;
 };
 
 type EditingResultPayload = {
@@ -219,17 +222,10 @@ export default function App() {
     setLoadingMember(true);
     setMemberMsg("");
     try {
-      // 1) Try direct endpoint (if exists)
       const res = await fetch(`/api/members/search?q=${encodeURIComponent(q)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (!res.ok) {
-        // 2) Fallback: search endpoint returning list (if exists)
-        alert("회원 검색 실패");
-        setMemberCandidates([]);
-        return;
-      }
-
+      
       if (!res.ok) {
         setMemberMsg("회원 검색 실패");
         setMemberCandidates([]);
@@ -240,9 +236,20 @@ export default function App() {
       setMemberCandidates(Array.isArray(rows) ? rows : []);
 
       if (!rows || rows.length === 0) {
+        setMember({
+          number: "",
+          name: "",
+          birth_date: "",
+          memo: "",
+          height_cm: undefined,
+          weight_kg: undefined,
+          teacher_id: null,
+        });
         setMemberMsg("검색된 회원이 없습니다.");
       } else if (rows.length === 1) {
         setMember(rows[0]);
+        setMemberCandidates([]);
+        setMemberSearchName(rows[0].name ?? q);
         setMemberMsg("회원 정보를 불러왔습니다.");
       } else {
         setMemberMsg(`동명이인 포함 ${rows.length}명이 검색되었습니다. 아래에서 선택하세요.`);
@@ -271,67 +278,13 @@ export default function App() {
 
       const data = await res.json();
       setMember(data);
+      setMemberCandidates([]);
+      setMemberSearchName(data.name ?? "");
       setMemberMsg("회원 정보를 불러왔습니다.");
     } catch {
       setMemberMsg("네트워크 오류");
     } finally {
       setLoadingMember(false);
-    }
-  }
-
-  // ===== Member Save (DB) =====
-  async function saveMemberToDB() {
-    const token = getAdminToken();
-    const number = member.number.trim();
-    const name = member.name.trim();
-    if (!number || !name) {
-      setMemberMsg("Number and Name are required.");
-      return;
-    }
-
-    if (currentUser?.role === "admin" && !member.teacher_id) {
-      setMemberMsg("Teacher ID is required for admin.");
-      return;
-    }
-
-    setSavingMember(true);
-    setMemberMsg("");
-    try {
-      const res = await fetch("/api/members/upsert", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          number,
-          name,
-          birth_date: member.birth_date || null,
-          memo: member.memo ?? "",
-          height_cm: member.height_cm ?? null,
-          weight_kg: member.weight_kg ?? null,
-          teacher_id: currentUser?.role === "admin" ? member.teacher_id : undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        let msg = "Failed to save member.";
-        try {
-          const err = await res.json();
-          msg = err?.detail || msg;
-        } catch {
-          const txt = await res.text().catch(() => "");
-          if (txt) msg = txt;
-        }
-        setMemberMsg(msg);
-        return;
-      }
-
-      setMemberMsg("Saved.");
-    } catch {
-      setMemberMsg("Network error.");
-    } finally {
-      setSavingMember(false);
     }
   }
 
@@ -347,8 +300,7 @@ export default function App() {
     if (!canvas) return;
 
     const number = member.number?.trim();
-    const name = member.name?.trim();
-    if (!number || !name) {
+    if (!number) {
       alert("먼저 회원을 이름으로 검색해서 선택하세요.");
       return;
     }
@@ -356,14 +308,7 @@ export default function App() {
     const image_data_url = canvas.toDataURL("image/png");
 
     const payload = {
-      member: {
-        number,
-        name,
-        birth_date: member.birth_date || null,
-        memo: member.memo ?? "",
-        height_cm: member.height_cm ?? null,
-        weight_kg: member.weight_kg ?? null,
-      },
+      member_number: number,
       image_data_url,
       selected_date: selectedDate || null,
       original_id: editingResultId,
@@ -846,21 +791,50 @@ export default function App() {
                 </div>
               )}
 
-              <div className="memberInfoCard">
-                <div><b>{member.name || "-"}</b></div>
-                <div>Birth Date: {member.birth_date || "-"}</div>
-                <div>Height: {member.height_cm ?? "-"} / Weight: {member.weight_kg ?? "-"}</div>
-                <div>Course: {member.course_name || "-"}</div>
-                <div>Contract Status: {member.contract_status || "-"}</div>
-                <div>
-                  Contract: {member.contract_start_date || "-"} ~ {member.contract_end_date || "-"}
+              <div
+                className="memberInfoCard"
+                style={{
+                  display: "grid",
+                  gap: 8,
+                  lineHeight: 1.45,
+                }}
+              >
+                <div style={{ fontSize: 18, fontWeight: 800 }}>
+                  {member.name || "-"} {member.number ? `(#${member.number})` : ""}
                 </div>
-                <div>Teacher: {member.teacher_name || "-"}</div>
-                <div>
-                  PT Total: {member.pt_total_count ?? 0} / Remaining: {member.pt_remaining_count ?? 0}
+
+                <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 6 }}>
+                  <div style={{ fontWeight: 700 }}>생년월일</div>
+                  <div>{member.birth_date || "-"}</div>
+
+                  <div style={{ fontWeight: 700 }}>키 / 몸무게</div>
+                  <div>{member.height_cm ?? "-"} cm / {member.weight_kg ?? "-"} kg</div>
+
+                  <div style={{ fontWeight: 700 }}>회원권</div>
+                  <div>{member.membership_name || "-"}</div>
+
+                  <div style={{ fontWeight: 700 }}>수강권</div>
+                  <div>{member.course_name || "-"}</div>
+
+                  <div style={{ fontWeight: 700 }}>계약 상태</div>
+                  <div>{member.contract_status || "-"}</div>
+
+                  <div style={{ fontWeight: 700 }}>계약 기간</div>
+                  <div>{member.contract_start_date || "-"} ~ {member.contract_end_date || "-"}</div>
+
+                  <div style={{ fontWeight: 700 }}>계약 작성일</div>
+                  <div>{member.contract_signed_at || "-"}</div>
+
+                  <div style={{ fontWeight: 700 }}>담당 선생님</div>
+                  <div>{member.teacher_name || "-"}</div>
+
+                  <div style={{ fontWeight: 700 }}>PT</div>
+                  <div>총 {member.pt_total_count ?? 0}회 / 남은 {member.pt_remaining_count ?? 0}회</div>
                 </div>
-                <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
-                  {member.memo || ""}
+
+                <div>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>메모</div>
+                  <div style={{ whiteSpace: "pre-wrap" }}>{member.memo || "-"}</div>
                 </div>
               </div>
 

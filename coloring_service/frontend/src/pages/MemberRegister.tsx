@@ -24,6 +24,7 @@ type MemberForm = {
   height_cm?: number | null;
   weight_kg?: number | null;
   teacher_id?: number | null;
+  membership_name?: string | null;
   course_name?: string | null;
   contract_status?: string | null;
   contract_start_date?: string | null;
@@ -33,12 +34,16 @@ type MemberForm = {
 };
 
 const COURSE_OPTIONS = [
-  "10 PT",
-  "20 PT",
-  "30 PT",
-  "Pilates Basic",
-  "Pilates Premium",
-  "Rehab",
+  "10회권",
+  "20회권",
+  "30회권",
+];
+
+const MEMBERSHIP_OPTIONS = [
+    "1개월 회원권",
+    "3개월 회원권",
+    "6개월 회원권",
+    "12개월 회원권",
 ];
 
 export default function MemberRegister({
@@ -58,8 +63,9 @@ export default function MemberRegister({
     height_cm: null,
     weight_kg: null,
     teacher_id: currentUser.role === "teacher" ? currentUser.id : null,
+    membership_name: "",
     course_name: "",
-    contract_status: "draft",
+    contract_status: "작성 전",
     contract_start_date: "",
     contract_end_date: "",
     contract_signed_at: "",
@@ -103,12 +109,13 @@ export default function MemberRegister({
         height_cm: data.height_cm ?? null,
         weight_kg: data.weight_kg ?? null,
         teacher_id: data.teacher_id ?? null,
+        membership_name: data.membership_name ?? "",
         course_name: data.course_name ?? "",
-        contract_status: data.contract_status ?? "draft",
+        contract_status: data.contract_status ?? "작성 전",
         contract_start_date: data.contract_start_date ?? "",
         contract_end_date: data.contract_end_date ?? "",
         contract_signed_at: data.contract_signed_at
-          ? String(data.contract_signed_at).slice(0, 16)
+          ? String(data.contract_signed_at).slice(0, 10)
           : "",
         contract_memo: data.contract_memo ?? "",
       });
@@ -149,8 +156,9 @@ export default function MemberRegister({
           height_cm: form.height_cm ?? null,
           weight_kg: form.weight_kg ?? null,
           teacher_id: currentUser.role === "admin" ? form.teacher_id : undefined,
+          membership_name: form.membership_name || null,
           course_name: form.course_name || null,
-          contract_status: form.contract_status || "draft",
+          contract_status: form.contract_status || "작성 전",
           contract_start_date: form.contract_start_date || null,
           contract_end_date: form.contract_end_date || null,
           contract_signed_at: form.contract_signed_at || null,
@@ -164,7 +172,7 @@ export default function MemberRegister({
         return;
       }
 
-      setMsg("회원/계약 정보가 저장되었습니다.");
+      setMsg("회원/수강권/계약 정보가 저장되었습니다. 코스를 새로 선택한 경우 PT가 자동 충전됩니다.");
     } catch {
       setMsg("네트워크 오류");
     } finally {
@@ -264,7 +272,22 @@ export default function MemberRegister({
           <h3 style={{ marginTop: 0 }}>Course / Contract</h3>
 
           <label>
-            코스 선택
+            회원권 선택
+            <select
+              value={form.membership_name ?? ""}
+              onChange={(e) => setForm({ ...form, membership_name: e.target.value })}
+            >
+              <option value="">선택</option>
+              {MEMBERSHIP_OPTIONS.map((membership) => (
+                <option key={membership} value={membership}>
+                  {membership}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            수강권 선택
             <select
               value={form.course_name ?? ""}
               onChange={(e) => setForm({ ...form, course_name: e.target.value })}
@@ -281,13 +304,13 @@ export default function MemberRegister({
           <label>
             계약 상태
             <select
-              value={form.contract_status ?? "draft"}
+              value={form.contract_status ?? "작성 전"}
               onChange={(e) => setForm({ ...form, contract_status: e.target.value })}
             >
-              <option value="draft">draft</option>
-              <option value="active">active</option>
-              <option value="expired">expired</option>
-              <option value="terminated">terminated</option>
+              <option value="작성 전">작성 전</option>
+              <option value="진행 중">진행 중</option>
+              <option value="만료">만료</option>
+              <option value="해지">해지</option>
             </select>
           </label>
 
@@ -310,9 +333,9 @@ export default function MemberRegister({
           </label>
 
           <label>
-            계약 작성 일시
+            계약 작성일
             <input
-              type="datetime-local"
+              type="date"
               value={form.contract_signed_at ?? ""}
               onChange={(e) => setForm({ ...form, contract_signed_at: e.target.value || "" })}
             />
