@@ -29,6 +29,14 @@ class Member(SQLModel, table=True):
 
     teacher_id: int = Field(foreign_key="user.id", index=True)
 
+    # 수강/계약 정보
+    course_name: Optional[str] = Field(default=None, index=True)
+    contract_status: str = Field(default="draft", index=True)  # draft | active | expired | terminated
+    contract_start_date: Optional[date] = Field(default=None, index=True)
+    contract_end_date: Optional[date] = Field(default=None, index=True)
+    contract_signed_at: Optional[datetime] = Field(default=None, index=True)
+    contract_memo: Optional[str] = Field(default=None)
+
     # PT 관리
     pt_total_count: int = Field(default=0)
     pt_remaining_count: int = Field(default=0)

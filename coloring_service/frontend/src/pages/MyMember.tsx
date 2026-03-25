@@ -25,6 +25,12 @@ type Member = {
 
   teacher_id?: number | null;
   teacher_name?: string | null;
+  course_name?: string | null;
+  contract_status?: string | null;
+  contract_start_date?: string | null;
+  contract_end_date?: string | null;
+  contract_signed_at?: string | null;
+  contract_memo?: string | null;
 
   pt_total_count?: number;
   pt_remaining_count?: number;
@@ -381,6 +387,14 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                 Height: {data.member.height_cm ?? "-"} cm / Weight: {data.member.weight_kg ?? "-"} kg
               </div>
 
+              <div style={{ marginTop: 6, color: "rgba(0,0,0,0.6)" }}>
+                Course: {data.member.course_name ?? "-"} / Contract: {data.member.contract_status ?? "-"}
+              </div>
+
+              <div style={{ marginTop: 6, color: "rgba(0,0,0,0.6)" }}>
+                Contract Period: {data.member.contract_start_date ?? "-"} ~ {data.member.contract_end_date ?? "-"}
+              </div>
+
               <div style={{ marginTop: 6 }}>
                 PT Total: {data.member.pt_total_count ?? 0} /
                 Remaining: {data.member.pt_remaining_count ?? 0}
@@ -419,8 +433,9 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                     <th>생년월일</th>
                     <th>키</th>
                     <th>몸무게</th>
-                    <th>총 PT</th>
+                    <th>수강권</th>
                     <th>남은 PT</th>
+                    <th>총 PT</th>
                     {currentUser.role === "admin" ? <th>담당 선생님</th> : null}
                   </tr>
                 </thead>
@@ -459,8 +474,9 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                       <td>{m.birth_date ?? "-"}</td>
                       <td>{m.height_cm ?? "-"}</td>
                       <td>{m.weight_kg ?? "-"}</td>
-                      <td>{m.pt_total_count ?? 0}</td>
+                      <td>{m.course_name ?? "-"}</td>
                       <td>{m.pt_remaining_count ?? 0}</td>
+                      <td>{m.pt_total_count ?? 0}</td>
                       {currentUser.role === "admin" ? <td>{m.teacher_name ?? "-"}</td> : null}
                     </tr>
                   ))}

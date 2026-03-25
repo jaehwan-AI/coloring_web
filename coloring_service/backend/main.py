@@ -154,11 +154,17 @@ class MemberUpsertIn(BaseModel):
     name: str
     birth_date: Optional[date] = None
     memo: Optional[str] = None
-
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
 
     teacher_id: Optional[int] = None
+
+    course_name: Optional[str] = None
+    contract_status: Optional[str] = "draft"
+    contract_start_date: Optional[date] = None
+    contract_end_date: Optional[date] = None
+    contract_signed_at: Optional[datetime] = None
+    contract_memo: Optional[str] = None
 
 class MemberOut(BaseModel):
     id: int
@@ -166,12 +172,18 @@ class MemberOut(BaseModel):
     name: str
     birth_date: Optional[date] = None
     memo: Optional[str] = None
-
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
 
     teacher_id: Optional[int] = None
     teacher_name: Optional[str] = None
+
+    course_name: Optional[str] = None
+    contract_status: Optional[str] = None
+    contract_start_date: Optional[date] = None
+    contract_end_date: Optional[date] = None
+    contract_signed_at: Optional[datetime] = None
+    contract_memo: Optional[str] = None
 
     pt_total_count: int = 0
     pt_remaining_count: int = 0
@@ -180,7 +192,8 @@ class MemberOut(BaseModel):
     updated_at: datetime
 
 class SaveColoredIn(BaseModel):
-    member: MemberUpsertIn
+    # member: MemberUpsertIn
+    member_number: str
     image_data_url: str  # data:image/png;base64,...
     original_id: Optional[int] = None
     original_upload_url: Optional[str] = None
@@ -329,6 +342,12 @@ def upsert_member(
         m.height_cm = payload.height_cm
         m.weight_kg = payload.weight_kg
         m.teacher_id = target_teacher_id
+        m.course_name = payload.course_name
+        m.contract_status = payload.contract_status or "draft"
+        m.contract_start_date = payload.contract_start_date
+        m.contract_end_date = payload.contract_end_date
+        m.contract_signed_at = payload.contract_signed_at
+        m.contract_memo = payload.contract_memo
         m.updated_at = datetime.utcnow()
     else:
         m = Member(
@@ -339,6 +358,12 @@ def upsert_member(
             height_cm=payload.height_cm,
             weight_kg=payload.weight_kg,
             teacher_id=target_teacher_id,
+            course_name=payload.course_name,
+            contract_status=payload.contract_status or "draft",
+            contract_start_date=payload.contract_start_date,
+            contract_end_date=payload.contract_end_date,
+            contract_signed_at=payload.contract_signed_at,
+            contract_memo=payload.contract_memo,
         )
 
     session.add(m)
@@ -357,6 +382,12 @@ def upsert_member(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        course_name=m.course_name,
+        contract_status=m.contract_status,
+        contract_start_date=m.contract_start_date,
+        contract_end_date=m.contract_end_date,
+        contract_signed_at=m.contract_signed_at,
+        contract_memo=m.contract_memo,
         pt_total_count=m.pt_total_count,
         pt_remaining_count=m.pt_remaining_count,
         created_at=m.created_at,
@@ -386,9 +417,51 @@ def get_member(
         "weight_kg": m.weight_kg,
         "teacher_id": m.teacher_id,
         "teacher_name": teacher.display_name if teacher else None,
+        "course_name": m.course_name,
+        "contract_status": m.contract_status,
+        "contract_start_date": m.contract_start_date,
+        "contract_end_date": m.contract_end_date,
+        "contract_signed_at": m.contract_signed_at,
+        "contract_memo": m.contract_memo,
         "created_at": m.created_at,
         "updated_at": m.updated_at,
     }
+
+
+@app.get("/api/members/by-number/{number}", response_model=MemberOut)
+def get_member_by_number(
+    number: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    stmt = scoped_member_query(user).where(Member.number == number)
+    m = session.exec(stmt).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    teacher = session.get(User, m.teacher_id)
+    return MemberOut(
+        id=m.id,
+        number=m.number,
+        name=m.name,
+        birth_date=m.birth_date,
+        memo=m.memo,
+        height_cm=m.height_cm,
+        weight_kg=m.weight_kg,
+        teacher_id=m.teacher_id,
+        teacher_name=teacher.display_name if teacher else None,
+        course_name=m.course_name,
+        contract_status=m.contract_status,
+        contract_start_date=m.contract_start_date,
+        contract_end_date=m.contract_end_date,
+        contract_signed_at=m.contract_signed_at,
+        contract_memo=m.contract_memo,
+        pt_total_count=m.pt_total_count,
+        pt_remaining_count=m.pt_remaining_count,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
 
 @app.get("/api/members", response_model=list[MemberOut])
 def list_members(
@@ -412,6 +485,12 @@ def list_members(
                 weight_kg=m.weight_kg,
                 teacher_id=m.teacher_id,
                 teacher_name=teacher.display_name if teacher else None,
+                course_name=m.course_name,
+                contract_status=m.contract_status,
+                contract_start_date=m.contract_start_date,
+                contract_end_date=m.contract_end_date,
+                contract_signed_at=m.contract_signed_at,
+                contract_memo=m.contract_memo,
                 pt_total_count=m.pt_total_count,
                 pt_remaining_count=m.pt_remaining_count,
                 created_at=m.created_at,
@@ -464,6 +543,12 @@ def get_member_results_by_name(
             "memo": m.memo,
             "teacher_id": m.teacher_id,
             "teacher_name": teacher.display_name if teacher else None,
+            "course_name": m.course_name,
+            "contract_status": m.contract_status,
+            "contract_start_date": m.contract_start_date,
+            "contract_end_date": m.contract_end_date,
+            "contract_signed_at": m.contract_signed_at,
+            "contract_memo": m.contract_memo,
             "pt_total_count": m.pt_total_count,
             "pt_remaining_count": m.pt_remaining_count,
             "created_at": m.created_at,
@@ -471,6 +556,88 @@ def get_member_results_by_name(
         },
         "items": items,
     }
+
+
+@app.get("/api/members/search", response_model=list[MemberOut])
+def search_members(
+    q: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    keyword = q.strip()
+    if not keyword:
+        return []
+
+    stmt = (
+        scoped_member_query(user)
+        .where(Member.name.ilike(f"%{keyword}%"))
+        .order_by(Member.name.asc(), Member.created_at.desc(), Member.id.desc())
+    )
+    rows = session.exec(stmt).all()
+
+    result: list[MemberOut] = []
+    for m in rows:
+        teacher = session.get(User, m.teacher_id)
+        result.append(
+            MemberOut(
+                id=m.id,
+                number=m.number,
+                name=m.name,
+                birth_date=m.birth_date,
+                memo=m.memo,
+                height_cm=m.height_cm,
+                weight_kg=m.weight_kg,
+                teacher_id=m.teacher_id,
+                teacher_name=teacher.display_name if teacher else None,
+                course_name=m.course_name,
+                contract_status=m.contract_status,
+                contract_start_date=m.contract_start_date,
+                contract_end_date=m.contract_end_date,
+                contract_signed_at=m.contract_signed_at,
+                contract_memo=m.contract_memo,
+                pt_total_count=m.pt_total_count,
+                pt_remaining_count=m.pt_remaining_count,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
+            )
+        )
+    return result
+
+
+@app.get("/api/members/{member_id}/detail", response_model=MemberOut)
+def get_member_detail(
+    member_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    m = session.get(Member, member_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    ensure_member_access(user, m)
+
+    teacher = session.get(User, m.teacher_id)
+    return MemberOut(
+        id=m.id,
+        number=m.number,
+        name=m.name,
+        birth_date=m.birth_date,
+        memo=m.memo,
+        height_cm=m.height_cm,
+        weight_kg=m.weight_kg,
+        teacher_id=m.teacher_id,
+        teacher_name=teacher.display_name if teacher else None,
+        course_name=m.course_name,
+        contract_status=m.contract_status,
+        contract_start_date=m.contract_start_date,
+        contract_end_date=m.contract_end_date,
+        contract_signed_at=m.contract_signed_at,
+        contract_memo=m.contract_memo,
+        pt_total_count=m.pt_total_count,
+        pt_remaining_count=m.pt_remaining_count,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
 
 def scoped_member_query(user: User):
     stmt = select(Member)
@@ -496,45 +663,11 @@ def save_colored(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    # 1) member upsert by number + 권한 체크
-    m = session.exec(select(Member).where(Member.number == payload.member.number)).first()
-
-    if m:
-        # 기존 회원이면 접근 권한 검사
-        ensure_member_access(user, m)
-
-        m.name = payload.member.name
-        m.birth_date = payload.member.birth_date
-        m.memo = payload.member.memo
-        m.height_cm = payload.member.height_cm
-        m.weight_kg = payload.member.weight_kg
-        m.updated_at = datetime.utcnow()
-
-        session.add(m)
-        session.commit()
-        session.refresh(m)
-
-    else:
-        # 새 회원 생성
-        if user.role == "teacher":
-            teacher_id = user.id
-        else:
-            teacher_id = payload.member.teacher_id
-            if teacher_id is None:
-                raise HTTPException(status_code=400, detail="teacher_id is required for admin-created member")
-
-        m = Member(
-            number=payload.member.number,
-            name=payload.member.name,
-            birth_date=payload.member.birth_date,
-            memo=payload.member.memo,
-            height_cm=payload.member.height_cm,
-            weight_kg=payload.member.weight_kg,
-            teacher_id=teacher_id,
-        )
-        session.add(m)
-        session.commit()
-        session.refresh(m)
+    # 1) 기존 회원만 조회 (Color 페이지에서는 회원 생성/수정 금지)
+    m = session.exec(select(Member).where(Member.number == payload.member_number)).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    ensure_member_access(user, m)
 
     # 2) decode data URL
     data_url = payload.image_data_url
@@ -635,44 +768,11 @@ def update_colored_result(
 
     ensure_member_access(user, current_member)
 
-    # 1) member upsert / update + 권한 체크
-    m = session.exec(select(Member).where(Member.number == payload.member.number)).first()
-
-    if m:
-        # 바꾸려는 대상 회원도 접근 가능한지 검사
-        ensure_member_access(user, m)
-
-        m.name = payload.member.name
-        m.birth_date = payload.member.birth_date
-        m.memo = payload.member.memo
-        m.height_cm = payload.member.height_cm
-        m.weight_kg = payload.member.weight_kg
-        m.updated_at = datetime.utcnow()
-
-        session.add(m)
-        session.commit()
-        session.refresh(m)
-
-    else:
-        if user.role == "teacher":
-            teacher_id = user.id
-        else:
-            teacher_id = payload.member.teacher_id
-            if teacher_id is None:
-                raise HTTPException(status_code=400, detail="teacher_id is required for admin-created member")
-
-        m = Member(
-            number=payload.member.number,
-            name=payload.member.name,
-            birth_date=payload.member.birth_date,
-            memo=payload.member.memo,
-            height_cm=payload.member.height_cm,
-            weight_kg=payload.member.weight_kg,
-            teacher_id=teacher_id,
-        )
-        session.add(m)
-        session.commit()
-        session.refresh(m)
+    # 1) 변경 대상 회원 조회만 허용
+    m = session.exec(select(Member).where(Member.number == payload.member_number)).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    ensure_member_access(user, m)
 
     # 2) decode image
     data_url = payload.image_data_url
@@ -974,6 +1074,13 @@ def get_member_results(
             height_cm=m.height_cm,
             weight_kg=m.weight_kg,
             teacher_id=getattr(m, "teacher_id", None),
+            teacher_name=None,
+            course_name=m.course_name,
+            contract_status=m.contract_status,
+            contract_start_date=m.contract_start_date,
+            contract_end_date=m.contract_end_date,
+            contract_signed_at=m.contract_signed_at,
+            contract_memo=m.contract_memo,
             pt_total_count=m.pt_total_count,
             pt_remaining_count=m.pt_remaining_count,
             created_at=m.created_at,
@@ -1344,6 +1451,12 @@ def recharge_member_pt(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        course_name=m.course_name,
+        contract_status=m.contract_status,
+        contract_start_date=m.contract_start_date,
+        contract_end_date=m.contract_end_date,
+        contract_signed_at=m.contract_signed_at,
+        contract_memo=m.contract_memo,
         pt_total_count=m.pt_total_count,
         pt_remaining_count=m.pt_remaining_count,
         created_at=m.created_at,
@@ -1391,6 +1504,12 @@ def consume_member_pt(
         weight_kg=m.weight_kg,
         teacher_id=m.teacher_id,
         teacher_name=teacher.display_name if teacher else None,
+        course_name=m.course_name,
+        contract_status=m.contract_status,
+        contract_start_date=m.contract_start_date,
+        contract_end_date=m.contract_end_date,
+        contract_signed_at=m.contract_signed_at,
+        contract_memo=m.contract_memo,
         pt_total_count=m.pt_total_count,
         pt_remaining_count=m.pt_remaining_count,
         created_at=m.created_at,

@@ -9,6 +9,8 @@ import SchedulePage from "./pages/Schedule";
 import Login from "./pages/Login";
 import { clearAdminToken, getAdminToken } from "./auth/authToken";
 import AdminMembers from "./pages/AdminMembers";
+import MemberRegister from "./pages/MemberRegister";
+import "./pages/MemberRegister.css"
 
 
 const API_BASE =
@@ -25,6 +27,7 @@ function toApiUrl(url?: string | null) {
 type Color = "red" | "blue" | "restore";
 
 type MemberInfo = {
+  id?: number;
   number: string;
   name: string;
   birth_date?: string | null;
@@ -32,6 +35,13 @@ type MemberInfo = {
   height_cm?: number | null;
   weight_kg?: number | null;
   teacher_id?: number | null;
+  teacher_name?: string | null;
+  course_name?: string | null;
+  contract_status?: string | null;
+  contract_start_date?: string | null;
+  contract_end_date?: string | null;
+  contract_signed_at?: string | null;
+  contract_memo?: string | null;
 };
 
 type EditingResultPayload = {
@@ -103,7 +113,7 @@ export default function App() {
     role: "admin" | "teacher";
   };
 
-  const [page, setPage] = useState<"color" | "member" | "schedule" | "admin">("color");
+  const [page, setPage] = useState<"color" | "member" | "register" | "schedule" | "admin">("color");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [teachers, setTeachers] = useState<TeacherOption[]>([]);
 
@@ -164,9 +174,11 @@ export default function App() {
     weight_kg: undefined,
     teacher_id: null,
   });
+
+  const [memberSearchName, setMemberSearchName] = useState("");
+  const [memberCandidates, setMemberCandidates] = useState<MemberInfo[]>([]);
   const [memberMsg, setMemberMsg] = useState<string>("");
   const [loadingMember, setLoadingMember] = useState<boolean>(false);
-  const [savingMember, setSavingMember] = useState<boolean>(false);
 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date();
@@ -196,52 +208,72 @@ export default function App() {
   }
 
   // ===== Member Load (name) =====
-  async function loadMemberByName() {
+  async function searchMembersByName() {
     const token = getAdminToken();
-    const name = member.name.trim();
-    if (!name) {
-      setMemberMsg("Please enter member number.");
+    const q = memberSearchName.trim();
+    if (!q) {
+      setMemberMsg("회원 이름을 입력하세요.");
       return;
     }
+
     setLoadingMember(true);
     setMemberMsg("");
     try {
       // 1) Try direct endpoint (if exists)
-      const res = await fetch(`/api/members/${encodeURIComponent(name)}`, {
+      const res = await fetch(`/api/members/search?q=${encodeURIComponent(q)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
         // 2) Fallback: search endpoint returning list (if exists)
-        alert("Member not found.");
+        alert("회원 검색 실패");
+        setMemberCandidates([]);
         return;
       }
 
       if (!res.ok) {
-        setMemberMsg(res.status === 404 ? "Member not found." : "Failed to load member.");
+        setMemberMsg("회원 검색 실패");
+        setMemberCandidates([]);
         return;
       }
       
-      const data = await res.json();
+      const rows = await res.json();
+      setMemberCandidates(Array.isArray(rows) ? rows : []);
 
-      // If using search endpoint: { items: [...] }
-      const memberData = Array.isArray(data?.items) ? (data.items[0] ?? null) : data;
-      if (!memberData) {
-        setMemberMsg("Member not found.");
+      if (!rows || rows.length === 0) {
+        setMemberMsg("검색된 회원이 없습니다.");
+      } else if (rows.length === 1) {
+        setMember(rows[0]);
+        setMemberMsg("회원 정보를 불러왔습니다.");
+      } else {
+        setMemberMsg(`동명이인 포함 ${rows.length}명이 검색되었습니다. 아래에서 선택하세요.`);
+      }
+    } catch {
+      setMemberMsg("Network error.");
+    } finally {
+      setLoadingMember(false);
+    }
+  }
+
+  async function selectMember(memberId: number) {
+    const token = getAdminToken();
+    setLoadingMember(true);
+    setMemberMsg("");
+
+    try {
+      const res = await fetch(`/api/members/${memberId}/detail`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!res.ok) {
+        setMemberMsg("회원 상세 조회 실패");
         return;
       }
 
-      setMember({
-        number: memberData.number ?? "",
-        name: memberData.name ?? name,
-        birth_date: memberData.birth_date ?? "",
-        memo: memberData.memo ?? "",
-        height_cm: memberData.height_cm ?? null,
-        weight_kg: memberData.weight_kg ?? null,
-        teacher_id: memberData.teacher_id ?? null,
-      });
-      setMemberMsg("Loaded.");
+      const data = await res.json();
+      setMember(data);
+      setMemberMsg("회원 정보를 불러왔습니다.");
     } catch {
-      setMemberMsg("Network error.");
+      setMemberMsg("네트워크 오류");
     } finally {
       setLoadingMember(false);
     }
@@ -317,7 +349,7 @@ export default function App() {
     const number = member.number?.trim();
     const name = member.name?.trim();
     if (!number || !name) {
-      alert("Member Number and Name are required before saving result.");
+      alert("먼저 회원을 이름으로 검색해서 선택하세요.");
       return;
     }
 
@@ -371,6 +403,7 @@ export default function App() {
     setEditingResultId(payload.id);
 
     setMember({
+      id: undefined,
       number: payload.member.number ?? "",
       name: payload.member.name ?? "",
       birth_date: payload.member.birth_date ?? "",
@@ -756,6 +789,8 @@ export default function App() {
     >
       {page === "member" ? (
         <MyMember currentUser={currentUser} onEditResult={startEditResult} />
+      ) : page === "register" ? (
+        <MemberRegister currentUser={currentUser} />
       ) : page === "schedule" ? (
         <SchedulePage />
       ) : page === "admin" ? (
@@ -783,103 +818,57 @@ export default function App() {
                 <label style={{ flex: 1, marginBottom: 0 }}>
                   Name
                   <input
-                    value={member.name}
-                    onChange={(e) => setMember({ ...member, name: e.target.value })}
+                    value={memberSearchName}
+                    onChange={(e) => setMemberSearchName(e.target.value)}
                     placeholder="e.g. 김종학"
                   />
                 </label>
-                <button className="btn" onClick={loadMemberByName} disabled={loadingMember}>
+                <button className="btn" onClick={searchMembersByName} disabled={loadingMember}>
                   {loadingMember ? "Loading..." : "Load"}
                 </button>
               </div>
 
-              <label>
-                Number
-                <input
-                  value={member.number}
-                  onChange={(e) => setMember({ ...member, number: e.target.value })}
-                  placeholder="e.g. 100023"
-                />
-              </label>
-
-              <label>
-                Birth Date
-                <input
-                  type="date"
-                  value={member.birth_date ?? ""}
-                  onChange={(e) => setMember({ ...member, birth_date: e.target.value || ""})}
-                />
-              </label>
-
-              <label>
-                Height (cm)
-                <input
-                  type="number"
-                  step="0.1"
-                  value={member.height_cm ?? ""}
-                  onChange={(e) =>
-                    setMember({ ...member, height_cm: e.target.value === "" ? undefined : Number(e.target.value) })
-                  }
-                />
-              </label>
-
-              <label>
-                Weight (kg)
-                <input
-                  type="number"
-                  step="0.1"
-                  value={member.weight_kg ?? ""}
-                  onChange={(e) =>
-                    setMember({ ...member, weight_kg: e.target.value === "" ? undefined : Number(e.target.value) })
-                  }
-                />
-              </label>
-
-              <label>
-                Date
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                />
-              </label>
-
-              <label>
-                Memo
-                <textarea
-                  rows={4}
-                  value={member.memo ?? ""}
-                  onChange={(e) => setMember({ ...member, memo: e.target.value })}
-                  placeholder="optional"
-                />
-              </label>
-
-              {currentUser?.role === "admin" && (
-                <input
-                  className="textInput"
-                  placeholder="Teacher ID"
-                  type="number"
-                  value={member.teacher_id ?? ""}
-                  onChange={(e) =>
-                    setMember((prev) => ({
-                      ...prev,
-                      teacher_id: e.target.value === "" ? null : Number(e.target.value),
-                    }))
-                  }
-                />
+              {memberCandidates.length > 1 && (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  {memberCandidates.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="btn"
+                      style={{ justifyContent: "flex-start", textAlign: "left" }}
+                      onClick={() => c.id && selectMember(c.id)}
+                    >
+                      {c.name} (#{c.number})
+                      {c.birth_date ? ` / ${c.birth_date}` : ""}
+                      {c.teacher_name ? ` / ${c.teacher_name}` : ""}
+                    </button>
+                  ))}
+                </div>
               )}
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="btn" onClick={saveMemberToDB} disabled={savingMember}>
-                  {savingMember ? "Saving..." : "Save Member"}
-                </button>
-
-                {editingResultId !== null && (
-                  <button className="btn" onClick={cancelEditMode} type="button">
-                    Cancel Edit
-                  </button>
-                )}
+              <div className="memberInfoCard">
+                <div><b>{member.name || "-"}</b></div>
+                <div>Birth Date: {member.birth_date || "-"}</div>
+                <div>Height: {member.height_cm ?? "-"} / Weight: {member.weight_kg ?? "-"}</div>
+                <div>Course: {member.course_name || "-"}</div>
+                <div>Contract Status: {member.contract_status || "-"}</div>
+                <div>
+                  Contract: {member.contract_start_date || "-"} ~ {member.contract_end_date || "-"}
+                </div>
+                <div>Teacher: {member.teacher_name || "-"}</div>
+                <div>
+                  PT Total: {member.pt_total_count ?? 0} / Remaining: {member.pt_remaining_count ?? 0}
+                </div>
+                <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
+                  {member.memo || ""}
+                </div>
               </div>
+
+              {editingResultId !== null && (
+                <button className="btn" onClick={cancelEditMode} type="button">
+                  Cancel Edit
+                </button>
+              )}
 
               {memberMsg && <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>{memberMsg}</div>}
             </section>

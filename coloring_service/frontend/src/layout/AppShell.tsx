@@ -2,7 +2,7 @@ import React from "react";
 import "./appShell.css";
 import { useViewportVars } from "./useViewportVars";
 
-export type PageType = "color" | "member" | "schedule" | "admin";
+export type PageType = "color" | "member" | "register" | "schedule" | "admin";
 
 type Props = {
   page: PageType;
@@ -67,6 +67,9 @@ export default function AppShell({
             <NavIcon active={page === "color"} label="Color" onClick={() => setPage("color")}>
               🎨
             </NavIcon>
+            <NavIcon active={page === "register"} label="Member Register" onClick={() => setPage("register")}>
+              📝
+            </NavIcon>
             <NavIcon active={page === "member"} label="My Member" onClick={() => setPage("member")}>
               👤
             </NavIcon>
@@ -91,6 +94,8 @@ export default function AppShell({
               <div className="topTitle">
                 {page === "color"
                   ? "Color"
+                  : page === "register"
+                  ? "Member Register"
                   : page === "member"
                   ? "My Member"
                   : page === "schedule"
