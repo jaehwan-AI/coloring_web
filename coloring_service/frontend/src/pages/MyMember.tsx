@@ -224,7 +224,8 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
     });
 
     if (!res.ok) {
-      alert("PT 충전 실패");
+      const text = await res.text().catch(() => "");
+      alert(text || `PT 충전 실패 (${res.status})`);
       return;
     }
 
@@ -418,6 +419,8 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                     <th>생년월일</th>
                     <th>키</th>
                     <th>몸무게</th>
+                    <th>총 PT</th>
+                    <th>남은 PT</th>
                     {currentUser.role === "admin" ? <th>담당 선생님</th> : null}
                   </tr>
                 </thead>
@@ -456,6 +459,8 @@ export default function MyMember({ currentUser, onEditResult }: Props) {
                       <td>{m.birth_date ?? "-"}</td>
                       <td>{m.height_cm ?? "-"}</td>
                       <td>{m.weight_kg ?? "-"}</td>
+                      <td>{m.pt_total_count ?? 0}</td>
+                      <td>{m.pt_remaining_count ?? 0}</td>
                       {currentUser.role === "admin" ? <td>{m.teacher_name ?? "-"}</td> : null}
                     </tr>
                   ))}

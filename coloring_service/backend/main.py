@@ -262,7 +262,7 @@ class TeacherPasswordResetIn(BaseModel):
 class MemberTeacherAssignIn(BaseModel):
     teacher_id: int
 
-class MemberPtReachargeIn(BaseModel):
+class MemberPtRechargeIn(BaseModel):
     amount: int
 
 class MemberPtConsumeIn(BaseModel):
@@ -464,6 +464,8 @@ def get_member_results_by_name(
             "memo": m.memo,
             "teacher_id": m.teacher_id,
             "teacher_name": teacher.display_name if teacher else None,
+            "pt_total_count": m.pt_total_count,
+            "pt_remaining_count": m.pt_remaining_count,
             "created_at": m.created_at,
             "updated_at": m.updated_at,
         },
